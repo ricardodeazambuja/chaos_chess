@@ -1,8 +1,5 @@
 # 👑 Chaos Chess
 
-> [!NOTE]
-> **Play it live:** `https://<YOUR_USERNAME>.github.io/<YOUR_REPO_NAME>/`
-
 A web-based chess game with a twist. This app, built with React, Vite, and Tailwind, lets you play chess with some chaotic new rules.
 
 ![Chaos Chess Screenshot](<./screenshot.png>)
@@ -28,11 +25,11 @@ A web-based chess game with a twist. This app, built with React, Vite, and Tailw
 
 1.  **Clone the repo:**
     ```bash
-    git clone [https://github.com/](https://github.com/)<YOUR_USERNAME>/<YOUR_REPO_NAME>.git
+    git clone https://github.com/ricardodeazambuja/chaos_chess.git
     ```
 2.  **Move into the directory:**
     ```bash
-    cd <YOUR_REPO_NAME>
+    cd chaos_chess
     ```
 3.  **Install dependencies:**
     ```bash
