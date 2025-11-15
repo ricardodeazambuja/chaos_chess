@@ -1,64 +1,163 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Crown, Users, RotateCcw } from 'lucide-react';
 
-const ChessGame = () => {
-  const [gameState, setGameState] = useState('setup'); // 'setup', 'playing', 'promoting', 'finished'
-  const [players, setPlayers] = useState([{ name: 'Player 1' }, { name: 'Player 2' }]);
-  const [currentPlayerIndex, setCurrentPlayerIndex] = useState(0);
-  const [currentColor, setCurrentColor] = useState('white');
-  const [board, setBoard] = useState([]);
-  const [selectedSquare, setSelectedSquare] = useState(null);
-  const [validMoves, setValidMoves] = useState([]);
-  const [moveHistory, setMoveHistory] = useState([]);
-  const [winner, setWinner] = useState(null);
-  const [playerMoveCount, setPlayerMoveCount] = useState([0, 0]);
-  const [gameMode, setGameMode] = useState('rotating');
-  const [randomPlayerColor, setRandomPlayerColor] = useState('white');
-  
-  // State for Pawn Promotion
-  const [promotionSquare, setPromotionSquare] = useState(null); // { row, col, color }
-  
-  // Network play state
-  const [playMode, setPlayMode] = useState('local'); // 'local' | 'network'
-  const [networkRole, setNetworkRole] = useState(null); // 'host' | 'guest'
-  const [peerConnection, setPeerConnection] = useState(null);
-  const [dataChannel, setDataChannel] = useState(null);
-  const [connectionOffer, setConnectionOffer] = useState('');
-  const [connectionAnswer, setConnectionAnswer] = useState('');
-  const [hostOfferInput, setHostOfferInput] = useState('');
-  const [guestAnswerInput, setGuestAnswerInput] = useState('');
-  const [isConnected, setIsConnected] = useState(false);
+interface Piece {
+  type: 'king' | 'queen' | 'rook' | 'bishop' | 'knight' | 'pawn';
+  color: 'white' | 'black';
+  hasMoved?: boolean;
+}
 
-  const initializeBoard = () => {
-    const newBoard = Array(8).fill(null).map(() => Array(8).fill(null));
-    
-    // Pawns
-    for (let i = 0; i < 8; i++) {
-      newBoard[1][i] = { type: 'pawn', color: 'black', hasMoved: false };
-      newBoard[6][i] = { type: 'pawn', color: 'white', hasMoved: false };
+interface Player {
+  name: string;
+}
+
+interface Move {
+  player: string;
+  color: 'white' | 'black';
+  from: string;
+  to: string;
+  piece: string;
+}
+
+interface LastMove {
+  fromRow: number;
+  fromCol: number;
+  toRow: number;
+  toCol: number;
+  piece: Piece;
+}
+
+interface PromotionSquare {
+  row: number;
+  col: number;
+  color: 'white' | 'black';
+}
+
+interface CapturedPieces {
+  white: Piece['type'][];
+  black: Piece['type'][];
+}
+
+// Board constants
+const BOARD_SIZE = 8;
+const BOARD_MAX_INDEX = 7;
+const BLACK_PAWN_ROW = 1;
+const WHITE_PAWN_ROW = 6;
+const BLACK_BACK_ROW = 0;
+const WHITE_BACK_ROW = 7;
+
+// LocalStorage constants
+const STORAGE_KEY = 'chaosChess_connection';
+const CONNECTION_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
+
+// LocalStorage helper functions
+const saveConnectionState = (localDescription: RTCSessionDescriptionInit) => {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      role: 'host',
+      localDescription,
+      timestamp: Date.now()
+    }));
+  } catch (error) {
+    console.error('Failed to save connection state:', error);
+  }
+};
+
+const loadConnectionState = (): { localDescription: RTCSessionDescriptionInit; timestamp: number } | null => {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (!stored) return null;
+
+    const data = JSON.parse(stored);
+
+    // Check if expired
+    if (Date.now() - data.timestamp > CONNECTION_EXPIRY_MS) {
+      localStorage.removeItem(STORAGE_KEY);
+      return null;
     }
-    
+
+    return data;
+  } catch (error) {
+    console.error('Failed to load connection state:', error);
+    return null;
+  }
+};
+
+const clearConnectionState = () => {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch (error) {
+    console.error('Failed to clear connection state:', error);
+  }
+};
+
+const ChessGame = () => {
+  const [gameState, setGameState] = useState<'setup' | 'playing' | 'promoting' | 'finished'>('setup');
+  const [players, setPlayers] = useState<Player[]>([{ name: 'Player 1' }, { name: 'Player 2' }]);
+  const [currentPlayerIndex, setCurrentPlayerIndex] = useState<number>(0);
+  const [currentColor, setCurrentColor] = useState<'white' | 'black'>('white');
+  const [board, setBoard] = useState<(Piece | null)[][]>([]);
+  const [selectedSquare, setSelectedSquare] = useState<{ row: number; col: number } | null>(null);
+  const [validMoves, setValidMoves] = useState<{ row: number; col: number }[]>([]);
+  const [moveHistory, setMoveHistory] = useState<Move[]>([]);
+  const [winner, setWinner] = useState<string | null>(null);
+  const [playerMoveCount, setPlayerMoveCount] = useState<number[]>([0, 0]);
+  const [gameMode, setGameMode] = useState<'rotating' | 'random'>('rotating');
+  const [randomPlayerColor, setRandomPlayerColor] = useState<'white' | 'black'>('white');
+
+  // State for Pawn Promotion
+  const [promotionSquare, setPromotionSquare] = useState<PromotionSquare | null>(null);
+
+  // State for En Passant
+  const [lastMove, setLastMove] = useState<LastMove | null>(null);
+
+  // State for Captured Pieces
+  const [capturedPieces, setCapturedPieces] = useState<CapturedPieces>({ white: [], black: [] });
+
+  // Network play state
+  const [playMode, setPlayMode] = useState<'local' | 'network'>('local');
+  const [networkRole, setNetworkRole] = useState<'host' | 'guest' | null>(null);
+  const [dataChannel, setDataChannel] = useState<RTCDataChannel | null>(null);
+  const [connectionOffer, setConnectionOffer] = useState<string>('');
+  const [connectionAnswer, setConnectionAnswer] = useState<string>('');
+  const [hostOfferInput, setHostOfferInput] = useState<string>('');
+  const [guestAnswerInput, setGuestAnswerInput] = useState<string>('');
+  const [isConnected, setIsConnected] = useState<boolean>(false);
+  const [connectionMessage, setConnectionMessage] = useState<string | null>(null);
+
+  // Ref to track current peer connection for event handlers
+  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+
+  const initializeBoard = (): (Piece | null)[][] => {
+    const newBoard: (Piece | null)[][] = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null));
+
+    // Pawns
+    for (let i = 0; i < BOARD_SIZE; i++) {
+      newBoard[BLACK_PAWN_ROW][i] = { type: 'pawn', color: 'black', hasMoved: false };
+      newBoard[WHITE_PAWN_ROW][i] = { type: 'pawn', color: 'white', hasMoved: false };
+    }
+
     // Rooks
-    newBoard[0][0] = { type: 'rook', color: 'black', hasMoved: false };
-    newBoard[0][7] = { type: 'rook', color: 'black', hasMoved: false };
-    newBoard[7][0] = { type: 'rook', color: 'white', hasMoved: false };
-    newBoard[7][7] = { type: 'rook', color: 'white', hasMoved: false };
-    
+    newBoard[BLACK_BACK_ROW][0] = { type: 'rook', color: 'black', hasMoved: false };
+    newBoard[BLACK_BACK_ROW][BOARD_MAX_INDEX] = { type: 'rook', color: 'black', hasMoved: false };
+    newBoard[WHITE_BACK_ROW][0] = { type: 'rook', color: 'white', hasMoved: false };
+    newBoard[WHITE_BACK_ROW][BOARD_MAX_INDEX] = { type: 'rook', color: 'white', hasMoved: false };
+
     // Knights
-    newBoard[0][1] = newBoard[0][6] = { type: 'knight', color: 'black' };
-    newBoard[7][1] = newBoard[7][6] = { type: 'knight', color: 'white' };
-    
+    newBoard[BLACK_BACK_ROW][1] = newBoard[BLACK_BACK_ROW][6] = { type: 'knight', color: 'black' };
+    newBoard[WHITE_BACK_ROW][1] = newBoard[WHITE_BACK_ROW][6] = { type: 'knight', color: 'white' };
+
     // Bishops
-    newBoard[0][2] = newBoard[0][5] = { type: 'bishop', color: 'black' };
-    newBoard[7][2] = newBoard[7][5] = { type: 'bishop', color: 'white' };
-    
+    newBoard[BLACK_BACK_ROW][2] = newBoard[BLACK_BACK_ROW][5] = { type: 'bishop', color: 'black' };
+    newBoard[WHITE_BACK_ROW][2] = newBoard[WHITE_BACK_ROW][5] = { type: 'bishop', color: 'white' };
+
     // Queens
-    newBoard[0][3] = { type: 'queen', color: 'black' };
-    newBoard[7][3] = { type: 'queen', color: 'white' };
-    
+    newBoard[BLACK_BACK_ROW][3] = { type: 'queen', color: 'black' };
+    newBoard[WHITE_BACK_ROW][3] = { type: 'queen', color: 'white' };
+
     // Kings
-    newBoard[0][4] = { type: 'king', color: 'black', hasMoved: false };
-    newBoard[7][4] = { type: 'king', color: 'white', hasMoved: false };
+    newBoard[BLACK_BACK_ROW][4] = { type: 'king', color: 'black', hasMoved: false };
+    newBoard[WHITE_BACK_ROW][4] = { type: 'king', color: 'white', hasMoved: false };
     
     return newBoard;
   };
@@ -71,10 +170,12 @@ const ChessGame = () => {
     setMoveHistory([]);
     setWinner(null);
     setPromotionSquare(null);
-    
+    setLastMove(null);
+    setCapturedPieces({ white: [], black: [] });
+
     // Initialize move count for each player to 0
     setPlayerMoveCount(players.map(() => 0));
-    
+
     // In random mode, set initial random color for first player
     if (gameMode === 'random') {
       setRandomPlayerColor(Math.random() < 0.5 ? 'white' : 'black');
@@ -96,7 +197,130 @@ const ChessGame = () => {
       }));
     }
   };
-  
+
+  // Process URL hash on mount and when hash changes
+  useEffect(() => {
+    const processHash = () => {
+      const hash = window.location.hash;
+      if (!hash) return;
+
+      // Parse offer or answer from URL
+      if (hash.startsWith('#offer=')) {
+        const offerCode = hash.substring(7); // Remove '#offer='
+        setPlayMode('network');
+        // Auto-process offer as guest
+        processOfferFromURL(offerCode);
+        // Clear hash after processing
+        window.history.replaceState(null, '', window.location.pathname);
+      } else if (hash.startsWith('#answer=')) {
+        const answerCode = hash.substring(8); // Remove '#answer='
+        setPlayMode('network');
+        // Auto-process answer as host
+        processAnswerFromURL(answerCode);
+        // Clear hash after processing
+        window.history.replaceState(null, '', window.location.pathname);
+      }
+    };
+
+    // Process on mount
+    processHash();
+
+    // Listen for hash changes (when user clicks answer link while on page)
+    window.addEventListener('hashchange', processHash);
+
+    return () => {
+      window.removeEventListener('hashchange', processHash);
+    };
+  }, []);
+
+  // Auto-process offer when guest clicks offer URL
+  const processOfferFromURL = async (offerCode: string) => {
+    try {
+      await createGuestConnection(offerCode);
+    } catch (error) {
+      console.error('Failed to process offer from URL:', error);
+      alert('Failed to process connection link. Please try again or use manual setup.');
+    }
+  };
+
+  // Auto-process answer when host clicks answer URL
+  const processAnswerFromURL = async (answerCode: string) => {
+    try {
+      console.log('[DEBUG] Processing answer from URL...');
+
+      // Decode the answer
+      console.log('[DEBUG] Decoding answer...');
+      const answer = JSON.parse(atob(answerCode));
+      console.log('[DEBUG] Answer decoded successfully');
+
+      // If we already have an active peer connection, just apply the answer
+      if (peerConnectionRef.current && peerConnectionRef.current.signalingState !== 'closed') {
+        console.log('[DEBUG] Using existing peer connection, state:', peerConnectionRef.current.signalingState);
+        await peerConnectionRef.current.setRemoteDescription(answer);
+        console.log('[DEBUG] Remote description set successfully');
+        setNetworkRole('host');
+        return;
+      }
+
+      // Otherwise, restore from localStorage
+      console.log('[DEBUG] No active peer connection, restoring from localStorage...');
+      const savedState = loadConnectionState();
+
+      if (!savedState) {
+        console.error('[DEBUG] No saved state found in localStorage');
+        alert('Connection expired or not found. Please start a new connection.');
+        clearConnectionState();
+        return;
+      }
+
+      console.log('[DEBUG] Saved state found, recreating peer connection...');
+
+      // Recreate the peer connection
+      const config = {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' }
+        ]
+      };
+
+      const pc = new RTCPeerConnection(config);
+      peerConnectionRef.current = pc;
+
+      // Recreate data channel
+      const dc = pc.createDataChannel('gameChannel');
+      setDataChannel(dc);
+
+      dc.onopen = () => {
+        console.log('Data channel opened');
+        setIsConnected(true);
+        clearConnectionState(); // Clear after successful connection
+      };
+
+      dc.onmessage = (event) => {
+        handlePeerMessage(JSON.parse(event.data));
+      };
+
+      // Restore local description
+      console.log('[DEBUG] Restoring local description...');
+      await pc.setLocalDescription(savedState.localDescription);
+      console.log('[DEBUG] Local description restored');
+
+      // Apply remote answer
+      console.log('[DEBUG] Applying remote answer...');
+      await pc.setRemoteDescription(answer);
+      console.log('[DEBUG] Remote answer applied successfully');
+
+      setNetworkRole('host');
+      setConnectionMessage('Connection established! Click "Start Game" to begin.');
+      console.log('[DEBUG] Connection process complete!');
+    } catch (error) {
+      console.error('[ERROR] Failed to process answer from URL:', error);
+      console.error('[ERROR] Error details:', error.message, error.stack);
+      alert('Failed to process answer link. Please try again or use manual setup.');
+      clearConnectionState();
+    }
+  };
+
   // WebRTC Functions
   const createHostConnection = async () => {
     const config = {
@@ -105,29 +329,30 @@ const ChessGame = () => {
         { urls: 'stun:stun1.l.google.com:19302' }
       ]
     };
-    
+
     const pc = new RTCPeerConnection(config);
-    setPeerConnection(pc);
-    
+    peerConnectionRef.current = pc;
+
     // Create data channel
     const dc = pc.createDataChannel('gameChannel');
     setDataChannel(dc);
-    
+
     dc.onopen = () => {
       console.log('Data channel opened');
       setIsConnected(true);
+      clearConnectionState(); // Clear after successful connection
     };
-    
+
     dc.onmessage = (event) => {
       handlePeerMessage(JSON.parse(event.data));
     };
-    
+
     // Create offer
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-    
+
     // Wait for ICE gathering to complete
-    await new Promise((resolve) => {
+    await new Promise<void>((resolve) => {
       if (pc.iceGatheringState === 'complete') {
         resolve();
       } else {
@@ -138,56 +363,70 @@ const ChessGame = () => {
         });
       }
     });
-    
+
+    // Save to localStorage for later restoration
+    if (pc.localDescription) {
+      saveConnectionState(pc.localDescription);
+    }
+
+    // Generate shareable URL
     const offerString = btoa(JSON.stringify(pc.localDescription));
-    setConnectionOffer(offerString);
+    const shareableURL = `${window.location.origin}${window.location.pathname}#offer=${offerString}`;
+    setConnectionOffer(shareableURL);
     setNetworkRole('host');
   };
   
   const acceptGuestAnswer = async (answerString) => {
     try {
       const answer = JSON.parse(atob(answerString));
-      await peerConnection.setRemoteDescription(answer);
+      await peerConnectionRef.current.setRemoteDescription(answer);
       setGuestAnswerInput('');
     } catch (error) {
       alert('Invalid answer code. Please check and try again.');
     }
   };
   
-  const createGuestConnection = async (offerString) => {
+  const createGuestConnection = async (offerString: string) => {
     try {
-      const offer = JSON.parse(atob(offerString));
+      let offerCode = offerString;
+      const offerPrefix = '#offer=';
+      const offerIndex = offerCode.indexOf(offerPrefix);
+      if (offerIndex !== -1) {
+        offerCode = offerCode.substring(offerIndex + offerPrefix.length);
+      }
       
+      const offer = JSON.parse(atob(offerCode));
+
       const config = {
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
           { urls: 'stun:stun1.l.google.com:19302' }
         ]
       };
-      
+
       const pc = new RTCPeerConnection(config);
-      setPeerConnection(pc);
-      
+      peerConnectionRef.current = pc;
+
       pc.ondatachannel = (event) => {
         const dc = event.channel;
         setDataChannel(dc);
-        
+
         dc.onopen = () => {
           console.log('Data channel opened');
           setIsConnected(true);
         };
-        
+
         dc.onmessage = (event) => {
           handlePeerMessage(JSON.parse(event.data));
         };
       };
-      
+
       await pc.setRemoteDescription(offer);
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
-      
+
       // Wait for ICE gathering
-      await new Promise((resolve) => {
+      await new Promise<void>((resolve) => {
         if (pc.iceGatheringState === 'complete') {
           resolve();
         } else {
@@ -198,9 +437,11 @@ const ChessGame = () => {
           });
         }
       });
-      
+
+      // Generate shareable answer URL
       const answerString = btoa(JSON.stringify(pc.localDescription));
-      setConnectionAnswer(answerString);
+      const shareableURL = `${window.location.origin}${window.location.pathname}#answer=${answerString}`;
+      setConnectionAnswer(shareableURL);
       setNetworkRole('guest');
       setHostOfferInput('');
     } catch (error) {
@@ -227,27 +468,22 @@ const ChessGame = () => {
         setCurrentColor(message.currentColor);
         setPlayerMoveCount(message.playerMoveCount);
         setMoveHistory(message.moveHistory);
+        setLastMove(message.lastMove);
         if (message.randomPlayerColor) {
           setRandomPlayerColor(message.randomPlayerColor);
         }
         if (message.winner) {
           setWinner(message.winner);
           setGameState('finished');
-        }
-        // Handle promotion state from peer
-        if (message.gameState === 'promoting') {
-          setGameState('promoting');
-          setPromotionSquare(message.promotionSquare);
         } else {
           setGameState('playing');
-          setPromotionSquare(null);
         }
         break;
     }
   };
   
-  const broadcastMove = (newBoard, newPlayerIndex, newColor, newMoveCount, newHistory, newRandomColor, winnerName, newGameState = 'playing', newPromotionSquare = null) => {
-    if (playMode === 'network' && networkRole === 'host' && dataChannel && dataChannel.readyState === 'open') {
+  const broadcastMove = (newBoard, newPlayerIndex, newColor, newMoveCount, newHistory, newRandomColor, winnerName, newGameState = 'playing', newLastMove = null) => {
+    if (playMode === 'network' && dataChannel && dataChannel.readyState === 'open') {
       dataChannel.send(JSON.stringify({
         type: 'MOVE_MADE',
         board: newBoard,
@@ -258,12 +494,12 @@ const ChessGame = () => {
         randomPlayerColor: newRandomColor,
         winner: winnerName,
         gameState: newGameState,
-        promotionSquare: newPromotionSquare
+        lastMove: newLastMove
       }));
     }
   };
   
-  const getPlayerColor = (playerIndex, moveCount) => {
+  const getPlayerColor = (playerIndex: number, moveCount: number): 'white' | 'black' => {
     if (gameMode === 'random') {
       // In random mode, use the randomly assigned color for current player
       if (playerIndex === currentPlayerIndex) {
@@ -286,9 +522,9 @@ const ChessGame = () => {
     }
   };
 
-  const getPieceSymbol = (piece) => {
+  const getPieceSymbol = (piece: Piece | null): string => {
     if (!piece) return '';
-    const whiteSymbols = {
+    const whiteSymbols: Record<Piece['type'], string> = {
       king: '♔',
       queen: '♕',
       rook: '♖',
@@ -296,7 +532,7 @@ const ChessGame = () => {
       knight: '♘',
       pawn: '♙'
     };
-    const blackSymbols = {
+    const blackSymbols: Record<Piece['type'], string> = {
       king: '♚',
       queen: '♛',
       rook: '♜',
@@ -307,8 +543,15 @@ const ChessGame = () => {
     return piece.color === 'white' ? whiteSymbols[piece.type] : blackSymbols[piece.type];
   };
 
+  const getPieceStyle = (color: 'white' | 'black'): { color: string; textShadow: string } => ({
+    color: color === 'white' ? '#f5f5dc' : '#000000',
+    textShadow: color === 'white'
+      ? '0 0 3px #000, 0 0 3px #000, 0 0 3px #000'
+      : '0 0 2px #fff, 0 0 2px #fff'
+  });
+
   const isValidMove = (fromRow, fromCol, toRow, toCol, piece, testBoard = board) => {
-    if (toRow < 0 || toRow > 7 || toCol < 0 || toCol > 7) return false;
+    if (toRow < 0 || toRow > BOARD_MAX_INDEX || toCol < 0 || toCol > BOARD_MAX_INDEX) return false;
     
     const targetPiece = testBoard[toRow][toCol];
     if (targetPiece && targetPiece.color === piece.color) return false;
@@ -321,16 +564,31 @@ const ChessGame = () => {
     switch (piece.type) {
       case 'pawn':
         const direction = piece.color === 'white' ? -1 : 1;
-        const startRow = piece.color === 'white' ? 6 : 1;
-        
+        const startRow = piece.color === 'white' ? WHITE_PAWN_ROW : BLACK_PAWN_ROW;
+
         if (colDiff === 0 && !targetPiece) {
           if (rowDiff === direction) return true;
           if (fromRow === startRow && rowDiff === 2 * direction && !testBoard[fromRow + direction][fromCol]) return true;
         }
-        
+
         if (absColDiff === 1 && rowDiff === direction && targetPiece) return true;
-        
-        // TODO: En Passant
+
+        // En Passant
+        if (absColDiff === 1 && rowDiff === direction && !targetPiece && lastMove) {
+          const enemyColor = piece.color === 'white' ? 'black' : 'white';
+          const expectedRow = piece.color === 'white' ? 3 : 4;
+
+          // Check if we're on the right row for en passant
+          if (fromRow === expectedRow &&
+              lastMove.piece.type === 'pawn' &&
+              lastMove.piece.color === enemyColor &&
+              Math.abs(lastMove.toRow - lastMove.fromRow) === 2 &&
+              lastMove.toRow === fromRow &&
+              lastMove.toCol === toCol) {
+            return true;
+          }
+        }
+
         return false;
 
       case 'rook':
@@ -362,9 +620,9 @@ const ChessGame = () => {
         
         // Castling
         if (absRowDiff === 0 && absColDiff === 2 && !piece.hasMoved && !isInCheck(piece.color, testBoard)) {
-          const rookCol = colDiff > 0 ? 7 : 0;
+          const rookCol = colDiff > 0 ? BOARD_MAX_INDEX : 0;
           const rook = testBoard[fromRow][rookCol];
-          
+
           if (rook && rook.type === 'rook' && !rook.hasMoved) {
             // Check path is clear between king and rook
             if (isPathClear(fromRow, fromCol, fromRow, rookCol, testBoard)) {
@@ -400,8 +658,8 @@ const ChessGame = () => {
   };
 
   const findKing = (color, testBoard) => {
-    for (let row = 0; row < 8; row++) {
-      for (let col = 0; col < 8; col++) {
+    for (let row = 0; row < BOARD_SIZE; row++) {
+      for (let col = 0; col < BOARD_SIZE; col++) {
         const piece = testBoard[row][col];
         if (piece && piece.type === 'king' && piece.color === color) {
           return { row, col };
@@ -412,8 +670,8 @@ const ChessGame = () => {
   };
 
   const isSquareUnderAttack = (row, col, byColor, testBoard) => {
-    for (let r = 0; r < 8; r++) {
-      for (let c = 0; c < 8; c++) {
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
         const piece = testBoard[r][c];
         if (piece && piece.color === byColor) {
           if (isValidMove(r, c, row, col, piece, testBoard)) {
@@ -436,18 +694,25 @@ const ChessGame = () => {
   const wouldBeInCheck = (fromRow, fromCol, toRow, toCol, testBoard) => {
     const newBoard = testBoard.map(row => [...row]);
     const piece = newBoard[fromRow][fromCol];
-    
+
     // Simulate castling move for check test
     if (piece.type === 'king' && Math.abs(toCol - fromCol) === 2) {
       newBoard[toRow][toCol] = { ...piece, hasMoved: true };
       newBoard[fromRow][fromCol] = null;
-      // Note: This check isn't perfect, as it doesn't simulate the rook move
-      // But we already check if king *is* in check or *passes through* check in isValidMove
+
+      // Also simulate the rook move for complete castling simulation
+      const rookCol = toCol > fromCol ? BOARD_MAX_INDEX : 0;
+      const newRookCol = toCol > fromCol ? 5 : 3;
+      const rook = newBoard[fromRow][rookCol];
+      if (rook) {
+        newBoard[fromRow][newRookCol] = { ...rook, hasMoved: true };
+        newBoard[fromRow][rookCol] = null;
+      }
     } else {
       newBoard[toRow][toCol] = piece;
       newBoard[fromRow][fromCol] = null;
     }
-    
+
     return isInCheck(piece.color, newBoard);
   };
 
@@ -455,10 +720,10 @@ const ChessGame = () => {
     const piece = board[row][col];
     const currentPlayerColor = getPlayerColor(currentPlayerIndex, playerMoveCount[currentPlayerIndex] || 0);
     if (!piece || piece.color !== currentPlayerColor) return [];
-    
+
     const moves = [];
-    for (let r = 0; r < 8; r++) {
-      for (let c = 0; c < 8; c++) {
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
         if (isValidMove(row, col, r, c, piece) && !wouldBeInCheck(row, col, r, c, board)) {
           moves.push({ row: r, col: c });
         }
@@ -467,17 +732,17 @@ const ChessGame = () => {
     return moves;
   };
 
-  const isCheckmate = (color) => {
-    if (!isInCheck(color, board)) return false;
-    
-    for (let fromRow = 0; fromRow < 8; fromRow++) {
-      for (let fromCol = 0; fromCol < 8; fromCol++) {
-        const piece = board[fromRow][fromCol];
+  const isCheckmate = (color, testBoard) => {
+    if (!isInCheck(color, testBoard)) return false;
+
+    for (let fromRow = 0; fromRow < BOARD_SIZE; fromRow++) {
+      for (let fromCol = 0; fromCol < BOARD_SIZE; fromCol++) {
+        const piece = testBoard[fromRow][fromCol];
         if (piece && piece.color === color) {
-          for (let toRow = 0; toRow < 8; toRow++) {
-            for (let toCol = 0; toCol < 8; toCol++) {
-              if (isValidMove(fromRow, fromCol, toRow, toCol, piece) && 
-                  !wouldBeInCheck(fromRow, fromCol, toRow, toCol, board)) {
+          for (let toRow = 0; toRow < BOARD_SIZE; toRow++) {
+            for (let toCol = 0; toCol < BOARD_SIZE; toCol++) {
+              if (isValidMove(fromRow, fromCol, toRow, toCol, piece, testBoard) &&
+                  !wouldBeInCheck(fromRow, fromCol, toRow, toCol, testBoard)) {
                 return false;
               }
             }
@@ -486,6 +751,74 @@ const ChessGame = () => {
       }
     }
     return true;
+  };
+
+  const isStalemate = (color, testBoard) => {
+    if (isInCheck(color, testBoard)) return false;
+
+    for (let fromRow = 0; fromRow < BOARD_SIZE; fromRow++) {
+      for (let fromCol = 0; fromCol < BOARD_SIZE; fromCol++) {
+        const piece = testBoard[fromRow][fromCol];
+        if (piece && piece.color === color) {
+          for (let toRow = 0; toRow < BOARD_SIZE; toRow++) {
+            for (let toCol = 0; toCol < BOARD_SIZE; toCol++) {
+              if (isValidMove(fromRow, fromCol, toRow, toCol, piece, testBoard) &&
+                  !wouldBeInCheck(fromRow, fromCol, toRow, toCol, testBoard)) {
+                return false;
+              }
+            }
+          }
+        }
+      }
+    }
+    return true;
+  };
+
+  const isInsufficientMaterial = (testBoard) => {
+    const pieces: { type: Piece['type']; color: 'white' | 'black'; row: number; col: number }[] = [];
+
+    // Collect all pieces on the board
+    for (let row = 0; row < BOARD_SIZE; row++) {
+      for (let col = 0; col < BOARD_SIZE; col++) {
+        const piece = testBoard[row][col];
+        if (piece) {
+          pieces.push({ type: piece.type, color: piece.color, row, col });
+        }
+      }
+    }
+
+    // K vs K (only two kings)
+    if (pieces.length === 2) {
+      return pieces.every(p => p.type === 'king');
+    }
+
+    // K+B vs K or K+N vs K (three pieces: two kings + one minor piece)
+    if (pieces.length === 3) {
+      const kings = pieces.filter(p => p.type === 'king');
+      const others = pieces.filter(p => p.type !== 'king');
+
+      if (kings.length === 2 && others.length === 1) {
+        const piece = others[0];
+        return piece.type === 'bishop' || piece.type === 'knight';
+      }
+    }
+
+    // K+B vs K+B with same-colored bishops (four pieces: two kings + two bishops)
+    if (pieces.length === 4) {
+      const kings = pieces.filter(p => p.type === 'king');
+      const bishops = pieces.filter(p => p.type === 'bishop');
+
+      if (kings.length === 2 && bishops.length === 2) {
+        // Check if bishops are on same color square
+        const bishop1 = bishops[0];
+        const bishop2 = bishops[1];
+        const bishop1Color = (bishop1.row + bishop1.col) % 2;
+        const bishop2Color = (bishop2.row + bishop2.col) % 2;
+        return bishop1Color === bishop2Color;
+      }
+    }
+
+    return false;
   };
 
   // This function now contains the logic to advance the turn
@@ -497,33 +830,35 @@ const ChessGame = () => {
     if (gameMode === 'random') {
       nextRandomColor = Math.random() < 0.5 ? 'white' : 'black';
     }
-    
+
     setTimeout(() => {
-      const isCheckmateSituation = isCheckmate(nextChessColor);
-      const winnerName = isCheckmateSituation ? players[currentPlayerIndex].name : null;
-      
-      if (isCheckmateSituation) {
+      const isCheckmateSituation = isCheckmate(nextChessColor, boardAfterMove);
+      const isStalemateSituation = isStalemate(nextChessColor, boardAfterMove);
+      const isInsufficientMaterialSituation = isInsufficientMaterial(boardAfterMove);
+
+      const winnerName = isCheckmateSituation
+        ? players[currentPlayerIndex].name
+        : (isStalemateSituation || isInsufficientMaterialSituation ? 'Draw' : null);
+
+      if (isCheckmateSituation || isStalemateSituation || isInsufficientMaterialSituation) {
         setWinner(winnerName);
         setGameState('finished');
       } else {
         setCurrentColor(nextChessColor);
         setCurrentPlayerIndex(nextPlayerIndex);
-        
+
         if (gameMode === 'random') {
           setRandomPlayerColor(nextRandomColor);
         }
       }
-      
+
       // Broadcast move to network peers
-      broadcastMove(boardAfterMove, nextPlayerIndex, nextChessColor, moveCountAfterMove, historyAfterMove, nextRandomColor, winnerName, winnerName ? 'finished' : 'playing');
+      broadcastMove(boardAfterMove, nextPlayerIndex, nextChessColor, moveCountAfterMove, historyAfterMove, nextRandomColor, winnerName, winnerName ? 'finished' : 'playing', lastMove);
     }, 100);
   };
 
   const handleSquareClick = (row, col) => {
     if (gameState !== 'playing' || winner) return;
-    
-    // In network mode, only host can make moves
-    if (playMode === 'network' && networkRole === 'guest') return;
 
     const piece = board[row][col];
     const currentPlayerColor = getPlayerColor(currentPlayerIndex, playerMoveCount[currentPlayerIndex] || 0);
@@ -534,20 +869,28 @@ const ChessGame = () => {
       if (isValidMoveSquare) {
         const newBoard = board.map(r => [...r]);
         const movingPiece = { ...newBoard[selectedSquare.row][selectedSquare.col] }; // deep copy
-        
+
         const capturedPiece = newBoard[row][col];
-        
+        let enPassantCapture = null;
+
         // Handle hasMoved flags
         if (movingPiece.type === 'king' || movingPiece.type === 'rook' || movingPiece.type === 'pawn') {
           movingPiece.hasMoved = true;
         }
-        
+
         newBoard[row][col] = movingPiece;
         newBoard[selectedSquare.row][selectedSquare.col] = null;
+
+        // Handle En Passant capture
+        if (movingPiece.type === 'pawn' && !capturedPiece && Math.abs(col - selectedSquare.col) === 1) {
+          // This is en passant - remove the captured pawn
+          enPassantCapture = newBoard[selectedSquare.row][col];
+          newBoard[selectedSquare.row][col] = null;
+        }
         
         // Handle Castling Rook Move
         if (movingPiece.type === 'king' && Math.abs(col - selectedSquare.col) === 2) {
-          const rookCol = col > selectedSquare.col ? 7 : 0;
+          const rookCol = col > selectedSquare.col ? BOARD_MAX_INDEX : 0;
           const newRookCol = col > selectedSquare.col ? 5 : 3;
           const rook = { ...newBoard[row][rookCol] };
           rook.hasMoved = true;
@@ -556,7 +899,26 @@ const ChessGame = () => {
         }
         
         setBoard(newBoard);
-        
+
+        // Track captured pieces
+        const actualCaptured = capturedPiece || enPassantCapture;
+        if (actualCaptured) {
+          const newCapturedPieces = { ...capturedPieces };
+          // Add to the list of pieces captured BY the moving piece's color
+          newCapturedPieces[movingPiece.color] = [...newCapturedPieces[movingPiece.color], actualCaptured.type];
+          setCapturedPieces(newCapturedPieces);
+        }
+
+        // Track last move for en passant
+        const newLastMove = {
+          fromRow: selectedSquare.row,
+          fromCol: selectedSquare.col,
+          toRow: row,
+          toCol: col,
+          piece: movingPiece
+        };
+        setLastMove(newLastMove);
+
         const newHistory = [...moveHistory, {
           player: players[currentPlayerIndex].name,
           color: currentPlayerColor,
@@ -565,7 +927,7 @@ const ChessGame = () => {
           piece: movingPiece.type
         }];
         setMoveHistory(newHistory);
-        
+
         setSelectedSquare(null);
         setValidMoves([]);
         
@@ -580,16 +942,15 @@ const ChessGame = () => {
           const winnerName = players[currentPlayerIndex].name;
           setWinner(winnerName);
           setGameState('finished');
-          broadcastMove(newBoard, (currentPlayerIndex + 1) % players.length, currentColor, newPlayerMoveCount, newHistory, randomPlayerColor, winnerName, 'finished');
-        
+          broadcastMove(newBoard, (currentPlayerIndex + 1) % players.length, currentColor, newPlayerMoveCount, newHistory, randomPlayerColor, winnerName, 'finished', newLastMove);
+
         // 2. Check for Pawn Promotion
-        } else if (movingPiece.type === 'pawn' && (row === 0 || row === 7)) {
+        } else if (movingPiece.type === 'pawn' && (row === BLACK_BACK_ROW || row === WHITE_BACK_ROW)) {
           setGameState('promoting');
           setPromotionSquare({ row, col, color: movingPiece.color });
           // Don't advance turn yet, wait for promotion choice
-          // Broadcast the 'promoting' state
-          broadcastMove(newBoard, currentPlayerIndex, currentColor, newPlayerMoveCount, newHistory, randomPlayerColor, null, 'promoting', { row, col, color: movingPiece.color });
-          
+          // Network sync will happen after promotion choice in advanceTurn
+
         // 3. Else, advance to next turn
         } else {
           advanceTurn(newBoard, newHistory, newPlayerMoveCount);
@@ -612,10 +973,7 @@ const ChessGame = () => {
   
   const handlePromotionChoice = (chosenPiece) => {
     if (gameState !== 'promoting' || !promotionSquare) return;
-    
-    // In network mode, only host can make moves
-    if (playMode === 'network' && networkRole === 'guest') return;
-    
+
     const newBoard = board.map(r => [...r]);
     newBoard[promotionSquare.row][promotionSquare.col].type = chosenPiece;
     
@@ -727,60 +1085,49 @@ const ChessGame = () => {
           {/* Host Connection Display */}
           {playMode === 'network' && networkRole === 'host' && !isConnected && (
             <div className="mb-6 p-4 bg-green-50 rounded-lg border-2 border-green-300">
-              <h3 className="font-bold text-slate-800 mb-2">📤 Your Connection Code</h3>
-              <p className="text-sm text-slate-600 mb-2">Share this code with your friend:</p>
-              <textarea
-                readOnly
-                value={connectionOffer}
-                className="w-full h-32 px-3 py-2 border-2 border-slate-300 rounded-lg text-xs font-mono mb-2"
-                onClick={(e) => e.target.select()}
-              />
+              <h3 className="font-bold text-slate-800 mb-2">🔗 Share this link with your friend</h3>
+              <p className="text-sm text-slate-600 mb-2">They can click it to join directly:</p>
+              <div className="bg-white p-3 rounded-lg border-2 border-slate-300 mb-2 break-all text-xs font-mono max-h-24 overflow-y-auto">
+                {connectionOffer}
+              </div>
               <button
                 onClick={() => {
                   navigator.clipboard.writeText(connectionOffer);
-                  alert('Code copied to clipboard!');
+                  alert('Link copied! Share it with your friend.');
                 }}
-                className="w-full px-3 py-1 bg-green-500 text-white rounded-lg hover:bg-green-600 text-sm mb-3"
+                className="w-full px-3 py-2 bg-green-500 text-white font-bold rounded-lg hover:bg-green-600 text-sm"
               >
-                📋 Copy Code
+                📋 Copy Link
               </button>
-              
-              <h3 className="font-bold text-slate-800 mb-2 mt-4">📥 Paste Guest's Answer</h3>
-              <textarea
-                placeholder="Paste the answer code from your friend here"
-                value={guestAnswerInput}
-                onChange={(e) => setGuestAnswerInput(e.target.value)}
-                className="w-full h-24 px-3 py-2 border-2 border-slate-300 rounded-lg text-xs font-mono mb-2"
-              />
-              <button
-                onClick={() => acceptGuestAnswer(guestAnswerInput)}
-                disabled={!guestAnswerInput}
-                className="w-full px-3 py-1 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-sm disabled:opacity-50"
-              >
-                ✅ Connect
-              </button>
+              <p className="text-xs text-slate-500 mt-2 text-center">Waiting for friend to connect...</p>
+            </div>
+          )}
+          
+          {/* Host Connected Display */}
+          {playMode === 'network' && networkRole === 'host' && isConnected && (
+            <div className="mb-6 p-4 bg-green-50 rounded-lg border-2 border-green-300">
+              <h3 className="font-bold text-slate-800 mb-2">✅ Connected!</h3>
+              <p className="text-sm text-slate-600 mb-2">Your friend has joined the game.</p>
+              {connectionMessage && <p className="text-sm text-slate-700 mt-2">{connectionMessage}</p>}
             </div>
           )}
           
           {/* Guest Connection Display */}
           {playMode === 'network' && networkRole === 'guest' && (
             <div className="mb-6 p-4 bg-blue-50 rounded-lg border-2 border-blue-300">
-              <h3 className="font-bold text-slate-800 mb-2">📤 Your Answer Code</h3>
-              <p className="text-sm text-slate-600 mb-2">Send this code back to the host:</p>
-              <textarea
-                readOnly
-                value={connectionAnswer}
-                className="w-full h-32 px-3 py-2 border-2 border-slate-300 rounded-lg text-xs font-mono mb-2"
-                onClick={(e) => e.target.select()}
-              />
+              <h3 className="font-bold text-slate-800 mb-2">🔗 Send this link back to the host</h3>
+              <p className="text-sm text-slate-600 mb-2">The host can click it to complete the connection:</p>
+              <div className="bg-white p-3 rounded-lg border-2 border-slate-300 mb-2 break-all text-xs font-mono max-h-24 overflow-y-auto">
+                {connectionAnswer}
+              </div>
               <button
                 onClick={() => {
                   navigator.clipboard.writeText(connectionAnswer);
-                  alert('Code copied to clipboard!');
+                  alert('Link copied! Send it back to the host.');
                 }}
-                className="w-full px-3 py-1 bg-blue-500 text-white rounded-lg hover:bg-blue-600 text-sm"
+                className="w-full px-3 py-2 bg-blue-500 text-white font-bold rounded-lg hover:bg-blue-600 text-sm"
               >
-                📋 Copy Code
+                📋 Copy Link
               </button>
               <p className="text-sm text-slate-600 mt-3 text-center">
                 {isConnected ? '✅ Connected! Waiting for host to start...' : '⏳ Waiting for connection...'}
@@ -855,10 +1202,9 @@ const ChessGame = () => {
               
               <button
                 onClick={startGame}
-                disabled={playMode === 'network' && networkRole === 'guest'}
-                className="w-full px-6 py-3 bg-amber-500 text-white font-bold rounded-lg hover:bg-amber-600 transition-colors disabled:opacity-50"
+                className="w-full px-6 py-3 bg-amber-500 text-white font-bold rounded-lg hover:bg-amber-600 transition-colors"
               >
-                {playMode === 'network' && networkRole === 'guest' ? 'Waiting for Host...' : 'Start Game'}
+                Start Game
               </button>
             </>
           )}
@@ -881,22 +1227,13 @@ const ChessGame = () => {
                 <button
                   key={pieceType}
                   onClick={() => handlePromotionChoice(pieceType)}
-                  disabled={playMode === 'network' && networkRole === 'guest'}
-                  className="w-24 h-24 bg-amber-100 rounded-lg flex items-center justify-center text-6xl hover:bg-amber-200 disabled:opacity-50"
-                  style={{
-                    color: promotionSquare.color === 'white' ? '#f5f5dc' : '#000000',
-                    textShadow: promotionSquare.color === 'white' 
-                      ? '0 0 3px #000, 0 0 3px #000' 
-                      : '0 0 2px #fff, 0 0 2px #fff'
-                  }}
+                  className="w-24 h-24 bg-amber-100 rounded-lg flex items-center justify-center text-6xl hover:bg-amber-200"
+                  style={getPieceStyle(promotionSquare.color)}
                 >
                   {getPieceSymbol({ type: pieceType, color: promotionSquare.color })}
                 </button>
               ))}
             </div>
-            {playMode === 'network' && networkRole === 'guest' && (
-              <p className="mt-4 text-slate-600">Waiting for host to choose...</p>
-            )}
           </div>
         </div>
       )}
@@ -916,7 +1253,7 @@ const ChessGame = () => {
           
           {winner ? (
             <div className="text-2xl font-bold text-amber-400 mb-4">
-              🏆 {winner} wins! 🏆
+              {winner === 'Draw' ? '🤝 Draw! 🤝' : `🏆 ${winner} wins! 🏆`}
             </div>
           ) : (
             <div className="text-xl text-white">
@@ -928,50 +1265,27 @@ const ChessGame = () => {
                 </span>
               </div>
               <div className="flex items-center justify-center gap-2 mt-2 text-4xl">
-                <span style={{
-                  color: getPlayerColor(currentPlayerIndex, playerMoveCount[currentPlayerIndex] || 0) === 'white' ? '#f5f5dc' : '#000000',
-                  textShadow: getPlayerColor(currentPlayerIndex, playerMoveCount[currentPlayerIndex] || 0) === 'white' 
-                    ? '0 0 3px #000, 0 0 3px #000, 0 0 3px #000' 
-                    : '0 0 2px #fff, 0 0 2px #fff'
-                }}>
+                <span style={getPieceStyle(getPlayerColor(currentPlayerIndex, playerMoveCount[currentPlayerIndex] || 0))}>
                   {getPlayerColor(currentPlayerIndex, playerMoveCount[currentPlayerIndex] || 0) === 'white' ? '♔' : '♚'}
                 </span>
-                <span style={{
-                  color: getPlayerColor(currentPlayerIndex, playerMoveCount[currentPlayerIndex] || 0) === 'white' ? '#f5f5dc' : '#000000',
-                  textShadow: getPlayerColor(currentPlayerIndex, playerMoveCount[currentPlayerIndex] || 0) === 'white' 
-                    ? '0 0 3px #000, 0 0 3px #000, 0 0 3px #000' 
-                    : '0 0 2px #fff, 0 0 2px #fff'
-                }}>
+                <span style={getPieceStyle(getPlayerColor(currentPlayerIndex, playerMoveCount[currentPlayerIndex] || 0))}>
                   {getPlayerColor(currentPlayerIndex, playerMoveCount[currentPlayerIndex] || 0) === 'white' ? '♕' : '♛'}
                 </span>
-                <span style={{
-                  color: getPlayerColor(currentPlayerIndex, playerMoveCount[currentPlayerIndex] || 0) === 'white' ? '#f5f5dc' : '#000000',
-                  textShadow: getPlayerColor(currentPlayerIndex, playerMoveCount[currentPlayerIndex] || 0) === 'white' 
-                    ? '0 0 3px #000, 0 0 3px #000, 0 0 3px #000' 
-                    : '0 0 2px #fff, 0 0 2px #fff'
-                }}>
+                <span style={getPieceStyle(getPlayerColor(currentPlayerIndex, playerMoveCount[currentPlayerIndex] || 0))}>
                   {getPlayerColor(currentPlayerIndex, playerMoveCount[currentPlayerIndex] || 0) === 'white' ? '♖' : '♜'}
                 </span>
-                <span style={{
-                  color: getPlayerColor(currentPlayerIndex, playerMoveCount[currentPlayerIndex] || 0) === 'white' ? '#f5f5dc' : '#000000',
-                  textShadow: getPlayerColor(currentPlayerIndex, playerMoveCount[currentPlayerIndex] || 0) === 'white' 
-                    ? '0 0 3px #000, 0 0 3px #000, 0 0 3px #000' 
-                    : '0 0 2px #fff, 0 0 2px #fff'
-                }}>
+                <span style={getPieceStyle(getPlayerColor(currentPlayerIndex, playerMoveCount[currentPlayerIndex] || 0))}>
                   {getPlayerColor(currentPlayerIndex, playerMoveCount[currentPlayerIndex] || 0) === 'white' ? '♘' : '♞'}
                 </span>
               </div>
               {isInCheck(getPlayerColor(currentPlayerIndex, playerMoveCount[currentPlayerIndex] || 0), board) && (
                 <div className="mt-2 text-red-400 font-bold">⚠️ CHECK! ⚠️</div>
               )}
-              {playMode === 'network' && networkRole === 'guest' && (
-                <div className="mt-2 text-sm text-amber-300">👁️ Spectator Mode - Host controls the game</div>
-              )}
             </div>
           )}
         </div>
 
-        <div className="flex flex-col lg:flex-row gap-6 items-center justify-center">
+        <div className="flex flex-col lg:flex-row gap-6 items-start justify-center">
           <div className="bg-slate-800 p-4 rounded-xl shadow-2xl">
             <div className="grid grid-cols-8 gap-0 border-4 border-amber-600">
               {board.map((row, rowIndex) => (
@@ -990,12 +1304,7 @@ const ChessGame = () => {
                         ${isValidMoveSquare ? 'ring-4 ring-green-500' : ''}
                         hover:opacity-80 transition-all`}
                     >
-                      <span style={{
-                        color: piece?.color === 'white' ? '#f5f5dc' : '#000000',
-                        textShadow: piece?.color === 'white' 
-                          ? '0 0 3px #000, 0 0 3px #000, 0 0 3px #000, 0 0 3px #000' 
-                          : '0 0 2px #fff, 0 0 2px #fff'
-                      }}>
+                      <span style={piece ? getPieceStyle(piece.color) : {}}>
                         {getPieceSymbol(piece)}
                       </span>
                     </div>
@@ -1032,6 +1341,41 @@ const ChessGame = () => {
               ))}
             </div>
 
+            {/* Captured Pieces Display */}
+            <div className="mb-6">
+              <h3 className="text-lg font-bold text-slate-800 mb-2">Captured Pieces</h3>
+              <div className="space-y-2">
+                <div className="bg-slate-50 p-2 rounded">
+                  <div className="text-xs font-semibold text-slate-600 mb-1">White captured:</div>
+                  <div className="flex flex-wrap gap-1">
+                    {capturedPieces.white.length > 0 ? (
+                      capturedPieces.white.map((pieceType, index) => (
+                        <span key={index} className="text-2xl" style={getPieceStyle('black')}>
+                          {getPieceSymbol({ type: pieceType, color: 'black' })}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-xs text-slate-400">None</span>
+                    )}
+                  </div>
+                </div>
+                <div className="bg-slate-50 p-2 rounded">
+                  <div className="text-xs font-semibold text-slate-600 mb-1">Black captured:</div>
+                  <div className="flex flex-wrap gap-1">
+                    {capturedPieces.black.length > 0 ? (
+                      capturedPieces.black.map((pieceType, index) => (
+                        <span key={index} className="text-2xl" style={getPieceStyle('white')}>
+                          {getPieceSymbol({ type: pieceType, color: 'white' })}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-xs text-slate-400">None</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <button
               onClick={() => {
                 setGameState('setup');
@@ -1040,15 +1384,15 @@ const ChessGame = () => {
                 setSelectedSquare(null);
                 setValidMoves([]);
                 // Reset network state
-                if (peerConnection) {
-                  peerConnection.close();
+                if (peerConnectionRef.current) {
+                  peerConnectionRef.current.close();
                 }
                 if (dataChannel) {
                   dataChannel.close();
                 }
                 setPlayMode('local');
                 setNetworkRole(null);
-                setPeerConnection(null);
+                peerConnectionRef.current = null;
                 setDataChannel(null);
                 setIsConnected(false);
                 setConnectionOffer('');
