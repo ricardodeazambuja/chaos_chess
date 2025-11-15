@@ -412,7 +412,7 @@ const ChaosChess = () => {
 
   // This function now contains the logic to advance the turn
   // It's called from handleSquareClick OR handlePromotionChoice
-  const advanceTurn = (boardAfterMove, historyAfterMove, moveCountAfterMove) => {
+  const advanceTurn = (boardAfterMove, historyAfterMove, moveCountAfterMove, lastMoveAfterMove) => {
     const nextChessColor = currentColor === 'white' ? 'black' : 'white';
     const nextPlayerIndex = (currentPlayerIndex + 1) % players.length;
     let nextRandomColor = randomPlayerColor;
@@ -420,45 +420,52 @@ const ChaosChess = () => {
       nextRandomColor = Math.random() < 0.5 ? 'white' : 'black';
     }
 
-    setTimeout(() => {
-      const isCheckmateSituation = isCheckmate(nextChessColor, boardAfterMove, lastMove);
-      const isStalemateSituation = isStalemate(nextChessColor, boardAfterMove, lastMove);
-      const isInsufficientMaterialSituation = isInsufficientMaterial(boardAfterMove);
+    // Check for game end conditions IMMEDIATELY (not in setTimeout)
+    const isCheckmateSituation = isCheckmate(nextChessColor, boardAfterMove, lastMoveAfterMove);
+    const isStalemateSituation = isStalemate(nextChessColor, boardAfterMove, lastMoveAfterMove);
+    const isInsufficientMaterialSituation = isInsufficientMaterial(boardAfterMove);
 
-      let winnerInfo: { name: string, reason: string } | null = null;
+    // Debug logging
+    if (isInCheck(nextChessColor, boardAfterMove, lastMoveAfterMove)) {
+      console.log(`${nextChessColor} is in check. Checkmate: ${isCheckmateSituation}`);
+      if (!isCheckmateSituation) {
+        console.log('Checkmate detection failed - player has valid moves');
+      }
+    }
 
-      if (isCheckmateSituation) {
-        winnerInfo = { name: players[currentPlayerIndex].name, reason: 'Checkmate' };
-      } else if (isStalemateSituation || isInsufficientMaterialSituation) {
-        if (isPointsGame) {
-          const maxScore = Math.max(...playerScores);
-          const winningPlayerIndices = playerScores.map((score, index) => score === maxScore ? index : -1).filter(index => index !== -1);
+    let winnerInfo: { name: string, reason: string } | null = null;
 
-          if (winningPlayerIndices.length === 1) {
-            winnerInfo = { name: players[winningPlayerIndices[0]].name, reason: 'Points' };
-          } else {
-            winnerInfo = { name: 'Draw', reason: 'Points' };
-          }
+    if (isCheckmateSituation) {
+      winnerInfo = { name: players[currentPlayerIndex].name, reason: 'Checkmate' };
+    } else if (isStalemateSituation || isInsufficientMaterialSituation) {
+      if (isPointsGame) {
+        const maxScore = Math.max(...playerScores);
+        const winningPlayerIndices = playerScores.map((score, index) => score === maxScore ? index : -1).filter(index => index !== -1);
+
+        if (winningPlayerIndices.length === 1) {
+          winnerInfo = { name: players[winningPlayerIndices[0]].name, reason: 'Points' };
         } else {
-          winnerInfo = { name: 'Draw', reason: 'Stalemate/Insufficient Material' };
+          winnerInfo = { name: 'Draw', reason: 'Points' };
         }
-      }
-
-      if (winnerInfo) {
-        setWinner(winnerInfo);
-        setGameState('finished');
       } else {
-        setCurrentColor(nextChessColor);
-        setCurrentPlayerIndex(nextPlayerIndex);
-
-        if (gameMode === 'random') {
-          setRandomPlayerColor(nextRandomColor);
-        }
+        winnerInfo = { name: 'Draw', reason: 'Stalemate/Insufficient Material' };
       }
+    }
 
-      // Broadcast move to network peers
-      broadcastMove(boardAfterMove, nextPlayerIndex, nextChessColor, moveCountAfterMove, historyAfterMove, nextRandomColor, winnerInfo, winnerInfo ? 'finished' : 'playing', lastMove);
-    }, 100);
+    if (winnerInfo) {
+      setWinner(winnerInfo);
+      setGameState('finished');
+    } else {
+      setCurrentColor(nextChessColor);
+      setCurrentPlayerIndex(nextPlayerIndex);
+
+      if (gameMode === 'random') {
+        setRandomPlayerColor(nextRandomColor);
+      }
+    }
+
+    // Broadcast move to network peers
+    broadcastMove(boardAfterMove, nextPlayerIndex, nextChessColor, moveCountAfterMove, historyAfterMove, nextRandomColor, winnerInfo, winnerInfo ? 'finished' : 'playing', lastMoveAfterMove);
   };
 
   const handleSquareClick = (row: number, col: number) => {
@@ -573,7 +580,7 @@ const ChaosChess = () => {
 
         // 3. Else, advance to next turn
         } else {
-          advanceTurn(newBoard, newHistory, newPlayerMoveCount);
+          advanceTurn(newBoard, newHistory, newPlayerMoveCount, newLastMove);
         }
         
       } else {
@@ -605,10 +612,11 @@ const ChaosChess = () => {
     setBoard(newBoard);
     setGameState('playing');
     setPromotionSquare(null);
-    
+
     // Now that promotion is done, advance the turn
     // We use the moveHistory and playerMoveCount from state, which were set before we paused
-    advanceTurn(newBoard, moveHistory, playerMoveCount);
+    // lastMove is already set from before promotion, so we use the current state value
+    advanceTurn(newBoard, moveHistory, playerMoveCount, lastMove);
   };
 
   const addPlayer = () => {
