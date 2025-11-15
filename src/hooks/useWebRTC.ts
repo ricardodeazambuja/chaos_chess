@@ -87,6 +87,25 @@ export const useWebRTC = ({ onMessage }: UseWebRTCProps) => {
     const pc = new RTCPeerConnection(config);
     peerConnectionRef.current = pc;
 
+    // Monitor connection state
+    pc.oniceconnectionstatechange = () => {
+      console.log('ICE connection state:', pc.iceConnectionState);
+      if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
+        setConnectionMessage('⚠️ Connection lost. Please refresh and reconnect.');
+        setIsConnected(false);
+      } else if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+        setConnectionMessage('✅ Connected!');
+      }
+    };
+
+    pc.onconnectionstatechange = () => {
+      console.log('Connection state:', pc.connectionState);
+      if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+        setConnectionMessage('❌ Connection failed. Please try again.');
+        setIsConnected(false);
+      }
+    };
+
     // Create data channel
     const dc = pc.createDataChannel('gameChannel');
     setDataChannel(dc);
@@ -162,6 +181,25 @@ export const useWebRTC = ({ onMessage }: UseWebRTCProps) => {
 
       const pc = new RTCPeerConnection(config);
       peerConnectionRef.current = pc;
+
+      // Monitor connection state
+      pc.oniceconnectionstatechange = () => {
+        console.log('ICE connection state:', pc.iceConnectionState);
+        if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
+          setConnectionMessage('⚠️ Connection lost. Please refresh and reconnect.');
+          setIsConnected(false);
+        } else if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+          setConnectionMessage('✅ Connected!');
+        }
+      };
+
+      pc.onconnectionstatechange = () => {
+        console.log('Connection state:', pc.connectionState);
+        if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+          setConnectionMessage('❌ Connection failed. Please try again.');
+          setIsConnected(false);
+        }
+      };
 
       pc.ondatachannel = (event) => {
         const dc = event.channel;

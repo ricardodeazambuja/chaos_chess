@@ -34,13 +34,13 @@ const SetupScreen = ({
 }) => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full">
-        <div className="flex items-center justify-center mb-6">
-          <Crown className="text-amber-500 mr-2" size={32} />
-          <h1 className="text-3xl font-bold text-slate-800">Chaos Chess</h1>
+      <div className="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 max-w-md w-full overflow-hidden">
+        <div className="flex items-center justify-center mb-4 sm:mb-6">
+          <Crown className="text-amber-500 mr-2" size={28} />
+          <h1 className="text-2xl sm:text-3xl font-bold text-slate-800 truncate">Chaos Chess</h1>
         </div>
-        
-        <p className="text-slate-600 mb-6 text-center">
+
+        <p className="text-slate-600 mb-4 sm:mb-6 text-center text-sm sm:text-base">
           Choose your madness! First to checkmate wins!
         </p>
         

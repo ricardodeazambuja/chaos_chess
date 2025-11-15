@@ -115,9 +115,9 @@ const GameInfoPanel: React.FC<GameInfoPanelProps> = ({
 
       <button
         onClick={handleNewGame}
-        className="w-full mb-6 px-4 py-2 bg-green-500 text-white font-bold rounded-lg hover:bg-green-600 flex items-center justify-center gap-2"
+        className="w-full mb-6 px-4 py-2 bg-green-500 text-white font-bold rounded-lg hover:bg-green-600 active:bg-green-700 hover:scale-105 active:scale-95 transition-all duration-200 ease-in-out flex items-center justify-center gap-2 shadow-md hover:shadow-lg"
       >
-        <RotateCcw size={18} />
+        <RotateCcw size={18} className="transition-transform group-hover:rotate-180 duration-300" />
         New Game
       </button>
 

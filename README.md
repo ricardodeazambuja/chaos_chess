@@ -2,7 +2,7 @@
 
 **Version 0.0.1** - A web-based chess game with a twist. This app, built with React, Vite, and Tailwind, lets you play chess with some chaotic new rules.
 
-![Chaos Chess Screenshot](<./screenshot.png>)
+![Chaos Chess Screenshot](<./public/screenshot.png>)
 
 ---
 

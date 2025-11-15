@@ -41,11 +41,11 @@ const ChessBoard = ({
                 const isSingleMove = isSingleMoveFrom || isSingleMoveTo;
 
                 const ringClass = isSelected
-                  ? 'ring-4 ring-blue-500'
+                  ? 'ring-4 ring-blue-500 ring-offset-2'
                   : isValidMoveSquare
-                    ? 'ring-4 ring-green-500'
+                    ? 'ring-4 ring-green-500 ring-offset-1 animate-pulse'
                     : isSingleMove
-                      ? 'ring-4 ring-purple-500'
+                      ? 'ring-4 ring-purple-400 ring-offset-1'
                       : '';
 
                 return (
@@ -55,9 +55,13 @@ const ChessBoard = ({
                     className={`w-12 h-12 md:w-16 md:h-16 flex items-center justify-center text-4xl md:text-5xl cursor-pointer
                       ${isLight ? 'bg-amber-100' : 'bg-amber-800'}
                       ${ringClass}
-                      hover:opacity-80 transition-all`}
+                      hover:opacity-80 hover:scale-105 active:scale-95
+                      transition-all duration-200 ease-in-out`}
                   >
-                    <span style={piece ? getPieceStyle(piece.color) : {}}>
+                    <span
+                      className="transition-transform duration-150 ease-in-out select-none"
+                      style={piece ? getPieceStyle(piece.color) : {}}
+                    >
                       {getPieceSymbol(piece)}
                     </span>
                   </div>

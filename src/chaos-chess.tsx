@@ -688,7 +688,7 @@ const ChaosChess = () => {
       )}
       {/* --- END OF MODAL --- */}
 
-      <div className="max-w-6xl mx-auto">
+      <div className="max-w-6xl mx-auto px-2 sm:px-4">
         <div className="text-center mb-6">
           <h1 className="text-4xl font-bold text-white mb-2 flex items-center justify-center gap-2">
             <Crown className="text-amber-400" size={36} />
@@ -731,7 +731,9 @@ const ChaosChess = () => {
                 </span>
               </div>
               {isInCheck(getPlayerColor(currentPlayerIndex, playerMoveCount[currentPlayerIndex] || 0), board, lastMove) && (
-                <div className="mt-2 text-red-400 font-bold">⚠️ CHECK! ⚠️</div>
+                <div className="mt-2 text-red-500 font-bold text-xl animate-pulse bg-red-950 px-4 py-2 rounded-lg border-2 border-red-500">
+                  ⚠️ CHECK! ⚠️
+                </div>
               )}
               {playMode === 'network' && (
                 <div className={`mt-3 px-4 py-2 rounded-lg text-sm font-semibold ${
