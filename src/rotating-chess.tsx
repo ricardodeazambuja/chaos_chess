@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Crown, Users, RotateCcw, Clock } from 'lucide-react';
+import { Crown, Users, RotateCcw, Clock, DollarSign } from 'lucide-react';
 
 interface Piece {
   type: 'king' | 'queen' | 'rook' | 'bishop' | 'knight' | 'pawn';
@@ -45,6 +45,16 @@ const BLACK_PAWN_ROW = 1;
 const WHITE_PAWN_ROW = 6;
 const BLACK_BACK_ROW = 0;
 const WHITE_BACK_ROW = 7;
+
+// Piece values for points game
+const PIECE_VALUES: Record<Piece['type'], number> = {
+  pawn: 1,
+  knight: 3,
+  bishop: 3,
+  rook: 5,
+  queen: 9,
+  king: 0 // King's value is usually infinite, but for scoring captured pieces, it's 0 as it ends the game.
+};
 
 // LocalStorage constants
 const STORAGE_KEY = 'chaosChess_connection';
@@ -107,7 +117,7 @@ const ChessGame = () => {
   const [selectedSquare, setSelectedSquare] = useState<{ row: number; col: number } | null>(null);
   const [validMoves, setValidMoves] = useState<{ row: number; col: number }[]>([]);
   const [moveHistory, setMoveHistory] = useState<Move[]>([]);
-  const [winner, setWinner] = useState<string | null>(null);
+  const [winner, setWinner] = useState<{ name: string, reason: string } | null>(null);
   const [playerMoveCount, setPlayerMoveCount] = useState<number[]>([0, 0]);
   const [gameMode, setGameMode] = useState<'rotating' | 'random' | 'normie'>('rotating');
   const [randomPlayerColor, setRandomPlayerColor] = useState<'white' | 'black'>('white');
@@ -116,6 +126,13 @@ const ChessGame = () => {
   const [isTimedGame, setIsTimedGame] = useState<boolean>(false);
   const [timeSetting, setTimeSetting] = useState<number>(5); // In minutes
   const [playerTimes, setPlayerTimes] = useState<number[]>([]); // In seconds
+
+  // State for points game
+  const [isPointsGame, setIsPointsGame] = useState<boolean>(false);
+  const [playerScores, setPlayerScores] = useState<number[]>([]);
+
+  // State for target score
+  const [targetScore, setTargetScore] = useState<number>(20);
 
   // State for Pawn Promotion
   const [promotionSquare, setPromotionSquare] = useState<PromotionSquare | null>(null);
@@ -205,6 +222,13 @@ const ChessGame = () => {
     } else {
       setPlayerTimes([]);
     }
+
+    // Initialize scores if it's a points game
+    if (isPointsGame) {
+      setPlayerScores(players.map(() => 0));
+    } else {
+      setPlayerScores([]);
+    }
     
     // If host, broadcast game start to peers
     if (playMode === 'network' && networkRole === 'host' && dataChannel && dataChannel.readyState === 'open') {
@@ -218,7 +242,9 @@ const ChessGame = () => {
         playerMoveCount: players.map(() => 0),
         randomPlayerColor: initialRandomColor,
         isTimedGame,
-        timeSetting
+        timeSetting,
+        isPointsGame,
+        targetScore
       }));
     }
   };
@@ -314,15 +340,35 @@ const ChessGame = () => {
 
     const timedOutPlayerIndex = playerTimes.findIndex(time => time === 0);
     if (timedOutPlayerIndex !== -1) {
+      let winnerInfo;
       if (players.length === 2) {
         const winnerIndex = 1 - timedOutPlayerIndex;
-        setWinner(`${players[winnerIndex].name} wins on time!`);
+        winnerInfo = { name: players[winnerIndex].name, reason: 'Time' };
       } else {
-        setWinner(`${players[timedOutPlayerIndex].name} lost on time.`);
+        winnerInfo = { name: 'Draw', reason: `Timeout (${players[timedOutPlayerIndex].name})` };
       }
+      setWinner(winnerInfo);
       setGameState('finished');
+      if (playMode === 'network' && dataChannel && dataChannel.readyState === 'open') {
+        dataChannel.send(JSON.stringify({ type: 'GAME_OVER', winner: winnerInfo }));
+      }
     }
   }, [playerTimes, isTimedGame, players, gameState]);
+
+  // Effect to check for target score win
+  useEffect(() => {
+    if (!isPointsGame || gameState !== 'playing') return;
+
+    const winnerIndex = playerScores.findIndex(score => score >= targetScore);
+    if (winnerIndex !== -1) {
+      const winnerInfo = { name: players[winnerIndex].name, reason: 'Target Score' };
+      setWinner(winnerInfo);
+      setGameState('finished');
+      if (playMode === 'network' && dataChannel && dataChannel.readyState === 'open') {
+        dataChannel.send(JSON.stringify({ type: 'GAME_OVER', winner: winnerInfo }));
+      }
+    }
+  }, [playerScores, isPointsGame, targetScore, players, gameState]);
 
   // Auto-process offer when guest clicks offer URL
   const processOfferFromURL = async (offerCode: string) => {
@@ -561,7 +607,23 @@ const ChessGame = () => {
           setPlayerTimes([]);
         }
 
+        // Handle points game settings
+        setIsPointsGame(message.isPointsGame);
+        if (message.isPointsGame) {
+          setPlayerScores(message.players.map(() => 0));
+          setTargetScore(message.targetScore);
+        } else {
+          setPlayerScores([]);
+        }
+
         setGameState('playing');
+        break;
+        
+      case 'GAME_OVER':
+        if (message.winner) {
+          setWinner(message.winner);
+        }
+        setGameState('finished');
         break;
         
       case 'MOVE_MADE':
@@ -577,6 +639,9 @@ const ChessGame = () => {
         if (message.playerTimes) {
           setPlayerTimes(message.playerTimes);
         }
+        if (message.playerScores) {
+          setPlayerScores(message.playerScores);
+        }
         if (message.winner) {
           setWinner(message.winner);
           setGameState('finished');
@@ -587,7 +652,7 @@ const ChessGame = () => {
     }
   };
   
-  const broadcastMove = (newBoard, newPlayerIndex, newColor, newMoveCount, newHistory, newRandomColor, winnerName, newGameState = 'playing', newLastMove = null) => {
+  const broadcastMove = (newBoard, newPlayerIndex, newColor, newMoveCount, newHistory, newRandomColor, winnerInfo, newGameState = 'playing', newLastMove = null) => {
     if (playMode === 'network' && dataChannel && dataChannel.readyState === 'open') {
       dataChannel.send(JSON.stringify({
         type: 'MOVE_MADE',
@@ -597,10 +662,11 @@ const ChessGame = () => {
         playerMoveCount: newMoveCount,
         moveHistory: newHistory,
         randomPlayerColor: newRandomColor,
-        winner: winnerName,
+        winner: winnerInfo,
         gameState: newGameState,
         lastMove: newLastMove,
-        playerTimes
+        playerTimes,
+        playerScores
       }));
     }
   };
@@ -951,12 +1017,27 @@ const ChessGame = () => {
       const isStalemateSituation = isStalemate(nextChessColor, boardAfterMove);
       const isInsufficientMaterialSituation = isInsufficientMaterial(boardAfterMove);
 
-      const winnerName = isCheckmateSituation
-        ? players[currentPlayerIndex].name
-        : (isStalemateSituation || isInsufficientMaterialSituation ? 'Draw' : null);
+      let winnerInfo: { name: string, reason: string } | null = null;
 
-      if (isCheckmateSituation || isStalemateSituation || isInsufficientMaterialSituation) {
-        setWinner(winnerName);
+      if (isCheckmateSituation) {
+        winnerInfo = { name: players[currentPlayerIndex].name, reason: 'Checkmate' };
+      } else if (isStalemateSituation || isInsufficientMaterialSituation) {
+        if (isPointsGame) {
+          const maxScore = Math.max(...playerScores);
+          const winningPlayerIndices = playerScores.map((score, index) => score === maxScore ? index : -1).filter(index => index !== -1);
+
+          if (winningPlayerIndices.length === 1) {
+            winnerInfo = { name: players[winningPlayerIndices[0]].name, reason: 'Points' };
+          } else {
+            winnerInfo = { name: 'Draw', reason: 'Points' };
+          }
+        } else {
+          winnerInfo = { name: 'Draw', reason: 'Stalemate/Insufficient Material' };
+        }
+      }
+
+      if (winnerInfo) {
+        setWinner(winnerInfo);
         setGameState('finished');
       } else {
         setCurrentColor(nextChessColor);
@@ -968,7 +1049,7 @@ const ChessGame = () => {
       }
 
       // Broadcast move to network peers
-      broadcastMove(boardAfterMove, nextPlayerIndex, nextChessColor, moveCountAfterMove, historyAfterMove, nextRandomColor, winnerName, winnerName ? 'finished' : 'playing', lastMove);
+      broadcastMove(boardAfterMove, nextPlayerIndex, nextChessColor, moveCountAfterMove, historyAfterMove, nextRandomColor, winnerInfo, winnerInfo ? 'finished' : 'playing', lastMove);
     }, 100);
   };
 
@@ -1022,6 +1103,17 @@ const ChessGame = () => {
           // Add to the list of pieces captured BY the moving piece's color
           newCapturedPieces[movingPiece.color] = [...newCapturedPieces[movingPiece.color], actualCaptured.type];
           setCapturedPieces(newCapturedPieces);
+
+          // Update scores if it's a points game
+          if (isPointsGame) {
+            const capturingPlayerIndex = currentPlayerIndex;
+            const capturedPieceValue = PIECE_VALUES[actualCaptured.type];
+            setPlayerScores(prevScores => {
+              const newScores = [...prevScores];
+              newScores[capturingPlayerIndex] = (newScores[capturingPlayerIndex] || 0) + capturedPieceValue;
+              return newScores;
+            });
+          }
         }
 
         // Track last move for en passant
@@ -1055,7 +1147,7 @@ const ChessGame = () => {
         // 1. Check for King Capture Win
         if (capturedPiece && capturedPiece.type === 'king') {
           const winnerName = players[currentPlayerIndex].name;
-          setWinner(winnerName);
+          setWinner({ name: winnerName, reason: 'King Capture' });
           setGameState('finished');
           broadcastMove(newBoard, (currentPlayerIndex + 1) % players.length, currentColor, newPlayerMoveCount, newHistory, randomPlayerColor, winnerName, 'finished', newLastMove);
 
@@ -1089,8 +1181,13 @@ const ChessGame = () => {
   const handlePromotionChoice = (chosenPiece) => {
     if (gameState !== 'promoting' || !promotionSquare) return;
 
-    const newBoard = board.map(r => [...r]);
-    newBoard[promotionSquare.row][promotionSquare.col].type = chosenPiece;
+    const newBoard = board.map((r, rowIndex) => {
+      if (rowIndex !== promotionSquare.row) return r;
+      return r.map((p, colIndex) => {
+        if (colIndex !== promotionSquare.col) return p;
+        return { ...p, type: chosenPiece };
+      });
+    });
     
     setBoard(newBoard);
     setGameState('playing');
@@ -1295,10 +1392,45 @@ const ChessGame = () => {
                     <div className="text-sm text-slate-600">Just a regular game of chess.</div>
                   </button>
                 </div>
-              </div>
+                            </div>
               
-              {playMode === 'local' && gameMode !== 'normie' && (
-                <div className="space-y-3 mb-6">
+                            {/* Points Game Controls */}
+                            <div className="mb-6">
+                              <label className="block text-sm font-bold text-slate-700 mb-2">Points Game</label>
+                              <div className="p-4 rounded-lg border-2 border-slate-300 bg-white">
+                                                  <div className="flex items-center justify-between">
+                                                    <div className="flex items-center">
+                                                      <DollarSign className="mr-2 text-slate-600" size={20} />
+                                                      <span className="font-bold text-slate-800">Points Game Enabled</span>
+                                                    </div>
+                                                    <button
+                                                      onClick={() => setIsPointsGame(!isPointsGame)}
+                                                      className={`relative inline-flex items-center h-6 rounded-full w-11 transition-colors ${
+                                                        isPointsGame ? 'bg-green-500' : 'bg-slate-400'
+                                                      }`}
+                                                    >
+                                                      <span
+                                                        className={`inline-block w-4 h-4 transform bg-white rounded-full transition-transform ${
+                                                          isPointsGame ? 'translate-x-6' : 'translate-x-1'
+                                                        }`}
+                                                      />
+                                                    </button>
+                                                  </div>
+                                                  {isPointsGame && (
+                                                    <div className="mt-4">
+                                                      <label className="block text-xs font-bold text-slate-600 mb-1">Target Score to Win</label>
+                                                      <input
+                                                        type="number"
+                                                        min="1"
+                                                        value={targetScore}
+                                                        onChange={(e) => setTargetScore(Number(e.target.value))}
+                                                        className="w-full px-3 py-2 border-2 border-slate-300 rounded-lg text-sm"
+                                                      />
+                                                    </div>
+                                                  )}
+                                                </div>                            </div>
+              
+                            {playMode === 'local' && gameMode !== 'normie' && (                <div className="space-y-3 mb-6">
                   {players.map((player, index) => (
                     <div key={index} className="flex gap-2">
                       <input
@@ -1421,7 +1553,10 @@ const ChessGame = () => {
           
           {winner ? (
             <div className="text-2xl font-bold text-amber-400 mb-4">
-              {winner === 'Draw' ? '🤝 Draw! 🤝' : `🏆 ${winner} wins! 🏆`}
+              {winner.name === 'Draw'
+                ? `🤝 Draw by ${winner.reason}! 🤝`
+                : `🏆 ${winner.name} wins by ${winner.reason}! 🏆`
+              }
             </div>
           ) : (
             <div className="text-xl text-white">
@@ -1464,6 +1599,22 @@ const ChessGame = () => {
               >
                 <div className="font-semibold text-sm truncate">{player.name}</div>
                 <div className="font-mono text-2xl font-bold">{formatTime(playerTimes[index])}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {isPointsGame && (
+          <div className="flex justify-center gap-4 mb-4">
+            {players.map((player, index) => (
+              <div
+                key={index}
+                className={`p-3 rounded-lg text-center w-32 ${
+                  index === currentPlayerIndex ? 'bg-amber-500 text-white' : 'bg-slate-700 text-slate-300'
+                }`}
+              >
+                <div className="font-semibold text-sm truncate">{player.name}</div>
+                <div className="font-mono text-2xl font-bold">{playerScores[index]} pts</div>
               </div>
             ))}
           </div>
