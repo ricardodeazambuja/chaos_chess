@@ -163,10 +163,14 @@ const ChessGame = () => {
   };
 
   const startGame = () => {
+    const startingPlayerIndex = Math.floor(Math.random() * players.length);
+    const startingColor = 'white';
+    const initialRandomColor = gameMode === 'random' ? (Math.random() < 0.5 ? 'white' : 'black') : startingColor;
+
     setBoard(initializeBoard());
     setGameState('playing');
-    setCurrentPlayerIndex(0);
-    setCurrentColor('white');
+    setCurrentPlayerIndex(startingPlayerIndex);
+    setCurrentColor(startingColor);
     setMoveHistory([]);
     setWinner(null);
     setPromotionSquare(null);
@@ -176,12 +180,8 @@ const ChessGame = () => {
     // Initialize move count for each player to 0
     setPlayerMoveCount(players.map(() => 0));
 
-    // In random mode, set initial random color for first player
-    if (gameMode === 'random') {
-      setRandomPlayerColor(Math.random() < 0.5 ? 'white' : 'black');
-    } else {
-      setRandomPlayerColor('white');
-    }
+    // Set initial color for the first player
+    setRandomPlayerColor(initialRandomColor);
     
     // If host, broadcast game start to peers
     if (playMode === 'network' && networkRole === 'host' && dataChannel && dataChannel.readyState === 'open') {
@@ -190,10 +190,10 @@ const ChessGame = () => {
         board: initializeBoard(),
         players,
         gameMode,
-        currentPlayerIndex: 0,
-        currentColor: 'white',
+        currentPlayerIndex: startingPlayerIndex,
+        currentColor: startingColor,
         playerMoveCount: players.map(() => 0),
-        randomPlayerColor: gameMode === 'random' ? (Math.random() < 0.5 ? 'white' : 'black') : 'white'
+        randomPlayerColor: initialRandomColor
       }));
     }
   };
