@@ -413,7 +413,15 @@ const ChaosChess = () => {
   // This function now contains the logic to advance the turn
   // It's called from handleSquareClick OR handlePromotionChoice
   const advanceTurn = (boardAfterMove, historyAfterMove, moveCountAfterMove, lastMoveAfterMove) => {
-    const nextChessColor = currentColor === 'white' ? 'black' : 'white';
+    // CRITICAL FIX: Use the actual piece color from the move, not currentColor state
+    // This ensures we always check the opponent's color for checkmate, regardless of turn order
+    if (!lastMoveAfterMove || !lastMoveAfterMove.piece) {
+      console.error('advanceTurn called without valid lastMove!');
+      return;
+    }
+
+    const pieceColorThatJustMoved = lastMoveAfterMove.piece.color;
+    const nextChessColor = pieceColorThatJustMoved === 'white' ? 'black' : 'white';
     const nextPlayerIndex = (currentPlayerIndex + 1) % players.length;
     let nextRandomColor = randomPlayerColor;
     if (gameMode === 'random') {
@@ -424,14 +432,6 @@ const ChaosChess = () => {
     const isCheckmateSituation = isCheckmate(nextChessColor, boardAfterMove, lastMoveAfterMove);
     const isStalemateSituation = isStalemate(nextChessColor, boardAfterMove, lastMoveAfterMove);
     const isInsufficientMaterialSituation = isInsufficientMaterial(boardAfterMove);
-
-    // Debug logging
-    if (isInCheck(nextChessColor, boardAfterMove, lastMoveAfterMove)) {
-      console.log(`${nextChessColor} is in check. Checkmate: ${isCheckmateSituation}`);
-      if (!isCheckmateSituation) {
-        console.log('Checkmate detection failed - player has valid moves');
-      }
-    }
 
     let winnerInfo: { name: string, reason: string } | null = null;
 

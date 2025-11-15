@@ -288,23 +288,15 @@ export const wouldBeInCheck = (
 export const isCheckmate = (color: 'white' | 'black', testBoard: (Piece | null)[][], lastMove: LastMove | null = null): boolean => {
   if (!isInCheck(color, testBoard, lastMove)) return false;
 
-  const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
-  const ranks = ['8', '7', '6', '5', '4', '3', '2', '1'];
-
   for (let fromRow = 0; fromRow < BOARD_SIZE; fromRow++) {
     for (let fromCol = 0; fromCol < BOARD_SIZE; fromCol++) {
       const piece = testBoard[fromRow][fromCol];
       if (piece && piece.color === color) {
         for (let toRow = 0; toRow < BOARD_SIZE; toRow++) {
           for (let toCol = 0; toCol < BOARD_SIZE; toCol++) {
-            if (isValidMove(fromRow, fromCol, toRow, toCol, piece, testBoard, lastMove)) {
-              const wouldStillBeInCheck = wouldBeInCheck(fromRow, fromCol, toRow, toCol, testBoard, lastMove);
-              if (!wouldStillBeInCheck) {
-                const from = `${files[fromCol]}${ranks[fromRow]}`;
-                const to = `${files[toCol]}${ranks[toRow]}`;
-                console.log(`Found escape move for ${color}: ${piece.type} ${from} -> ${to}`);
-                return false;
-              }
+            if (isValidMove(fromRow, fromCol, toRow, toCol, piece, testBoard, lastMove) &&
+                !wouldBeInCheck(fromRow, fromCol, toRow, toCol, testBoard, lastMove)) {
+              return false;
             }
           }
         }
