@@ -1,6 +1,6 @@
 # 👑 Chaos Chess
 
-A web-based chess game with a twist. This app, built with React, Vite, and Tailwind, lets you play chess with some chaotic new rules.
+**Version 0.0.1** - A web-based chess game with a twist. This app, built with React, Vite, and Tailwind, lets you play chess with some chaotic new rules.
 
 ![Chaos Chess Screenshot](<./screenshot.png>)
 
@@ -8,11 +8,14 @@ A web-based chess game with a twist. This app, built with React, Vite, and Tailw
 
 ## Features
 
-* **Classic Mode:** Standard 1v1 chess rules.
+* **Classic Mode (Normie):** Standard 1v1 chess rules.
 * **Chaos Mode (Rotating):** Play with 2+ players. After your move, you start playing for the *next* color in the rotation.
 * **Chaos Mode (Random):** Play with 2+ players. At the start of your turn, you are assigned a random color to play.
-* **Online P2P:** Play with a friend online using a simple WebRTC (peer-to-peer) connection. No server needed.
-* **Real Chess Rules:** Includes win by checkmate, win by king capture, castling, and pawn promotion.
+* **Online P2P:** Play with a friend online using WebRTC (peer-to-peer). No server needed.
+* **Real Chess Rules:** Includes checkmate, stalemate, castling, en passant, and pawn promotion.
+* **Board Coordinates:** Standard algebraic notation (a-h, 1-8) displayed on the board.
+* **Timed Games:** Optional timer mode with customizable time controls.
+* **Points Mode:** Score points by capturing pieces, first to reach target score wins.
 
 ## Tech Stack
 
