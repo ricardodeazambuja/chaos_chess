@@ -98,17 +98,95 @@ const ChaosChess = () => {
 
   // Network play state
   const [playMode, setPlayMode] = useState<'local' | 'network'>('local');
-  const [networkRole, setNetworkRole] = useState<'host' | 'guest' | null>(null);
-  const [dataChannel, setDataChannel] = useState<RTCDataChannel | null>(null);
-  const [connectionOffer, setConnectionOffer] = useState<string>('');
-  const [connectionAnswer, setConnectionAnswer] = useState<string>('');
-  const [hostOfferInput, setHostOfferInput] = useState<string>('');
-  const [guestAnswerInput, setGuestAnswerInput] = useState<string>('');
-  const [isConnected, setIsConnected] = useState<boolean>(false);
-  const [connectionMessage, setConnectionMessage] = useState<string | null>(null);
 
-  // Ref to track current peer connection for event handlers
-  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+  // Message handler for WebRTC peer messages
+  const handlePeerMessage = useCallback((message: any) => {
+    switch (message.type) {
+      case 'GAME_START':
+        setBoard(message.board);
+        setPlayers(message.players);
+        setGameMode(message.gameMode);
+        setCurrentPlayerIndex(message.currentPlayerIndex);
+        setCurrentColor(message.currentColor);
+        setPlayerMoveCount(message.playerMoveCount);
+        setRandomPlayerColor(message.randomPlayerColor);
+
+        // Handle timed game settings
+        setIsTimedGame(message.isTimedGame);
+        if (message.isTimedGame) {
+          setTimeSetting(message.timeSetting);
+          const initialTime = message.timeSetting * 60;
+          setPlayerTimes(message.players.map(() => initialTime));
+        } else {
+          setPlayerTimes([]);
+        }
+
+        // Handle points game settings
+        setIsPointsGame(message.isPointsGame);
+        if (message.isPointsGame) {
+          setPlayerScores(message.players.map(() => 0));
+          setTargetScore(message.targetScore);
+        } else {
+          setPlayerScores([]);
+        }
+
+        setGameState('playing');
+        break;
+
+      case 'GAME_OVER':
+        if (message.winner) {
+          setWinner(message.winner);
+        }
+        setGameState('finished');
+        break;
+
+      case 'MOVE_MADE':
+        setBoard(message.board);
+        setCurrentPlayerIndex(message.currentPlayerIndex);
+        setCurrentColor(message.currentColor);
+        setPlayerMoveCount(message.playerMoveCount);
+        setMoveHistory(message.moveHistory);
+        setLastMove(message.lastMove);
+        if (message.randomPlayerColor) {
+          setRandomPlayerColor(message.randomPlayerColor);
+        }
+        if (message.playerTimes) {
+          setPlayerTimes(message.playerTimes);
+        }
+        if (message.playerScores) {
+          setPlayerScores(message.playerScores);
+        }
+        if (message.winner) {
+          setWinner(message.winner);
+          setGameState('finished');
+        } else {
+          setGameState('playing');
+        }
+        break;
+    }
+  }, []);
+
+  // Initialize WebRTC hook
+  const {
+    dataChannel,
+    connectionOffer,
+    connectionAnswer,
+    hostOfferInput,
+    setHostOfferInput,
+    guestAnswerInput,
+    setGuestAnswerInput,
+    isConnected,
+    setIsConnected,
+    connectionMessage,
+    networkRole,
+    setNetworkRole,
+    peerConnectionRef,
+    createHostConnection,
+    acceptGuestAnswer,
+    createGuestConnection,
+    broadcastMove: webRTCBroadcast,
+    resetConnection
+  } = useWebRTC({ onMessage: handlePeerMessage });
 
   const startGame = () => {
     const startingPlayerIndex = Math.floor(Math.random() * players.length);
@@ -147,8 +225,8 @@ const ChaosChess = () => {
     }
     
     // If host, broadcast game start to peers
-    if (playMode === 'network' && networkRole === 'host' && dataChannel && dataChannel.readyState === 'open') {
-      dataChannel.send(JSON.stringify({
+    if (playMode === 'network' && networkRole === 'host') {
+      webRTCBroadcast({
         type: 'GAME_START',
         board: initializeBoard(),
         players,
@@ -161,44 +239,16 @@ const ChaosChess = () => {
         timeSetting,
         isPointsGame,
         targetScore
-      }));
+      });
     }
   };
 
-  // Process URL hash on mount and when hash changes
+  // Auto-switch to network mode when URL hash is processed
   useEffect(() => {
-    const processHash = () => {
-      const hash = window.location.hash;
-      if (!hash) return;
-
-      // Parse offer or answer from URL
-      if (hash.startsWith('#offer=')) {
-        const offerCode = hash.substring(7); // Remove '#offer='
-        setPlayMode('network');
-        // Auto-process offer as guest
-        processOfferFromURL(offerCode);
-        // Clear hash after processing
-        window.history.replaceState(null, '', window.location.pathname);
-      } else if (hash.startsWith('#answer=')) {
-        const answerCode = hash.substring(8); // Remove '#answer='
-        setPlayMode('network');
-        // Auto-process answer as host
-        processAnswerFromURL(answerCode);
-        // Clear hash after processing
-        window.history.replaceState(null, '', window.location.pathname);
-      }
-    };
-
-    // Process on mount
-    processHash();
-
-    // Listen for hash changes (when user clicks answer link while on page)
-    window.addEventListener('hashchange', processHash);
-
-    return () => {
-      window.removeEventListener('hashchange', processHash);
-    };
-  }, []);
+    if (networkRole !== null && playMode === 'local') {
+      setPlayMode('network');
+    }
+  }, [networkRole, playMode]);
 
   // Effect to find and highlight a single possible move
   useEffect(() => {
@@ -265,11 +315,11 @@ const ChaosChess = () => {
       }
       setWinner(winnerInfo);
       setGameState('finished');
-      if (playMode === 'network' && dataChannel && dataChannel.readyState === 'open') {
-        dataChannel.send(JSON.stringify({ type: 'GAME_OVER', winner: winnerInfo }));
+      if (playMode === 'network') {
+        webRTCBroadcast({ type: 'GAME_OVER', winner: winnerInfo });
       }
     }
-  }, [playerTimes, isTimedGame, players, gameState]);
+  }, [playerTimes, isTimedGame, players, gameState, playMode, webRTCBroadcast]);
 
   // Effect to check for target score win
   useEffect(() => {
@@ -280,297 +330,16 @@ const ChaosChess = () => {
       const winnerInfo = { name: players[winnerIndex].name, reason: 'Target Score' };
       setWinner(winnerInfo);
       setGameState('finished');
-      if (playMode === 'network' && dataChannel && dataChannel.readyState === 'open') {
-        dataChannel.send(JSON.stringify({ type: 'GAME_OVER', winner: winnerInfo }));
+      if (playMode === 'network') {
+        webRTCBroadcast({ type: 'GAME_OVER', winner: winnerInfo });
       }
     }
-  }, [playerScores, isPointsGame, targetScore, players, gameState]);
+  }, [playerScores, isPointsGame, targetScore, players, gameState, playMode, webRTCBroadcast]);
 
-  // Auto-process offer when guest clicks offer URL
-  const processOfferFromURL = async (offerCode: string) => {
-    try {
-      await createGuestConnection(offerCode);
-    } catch (error) {
-      console.error('Failed to process offer from URL:', error);
-      alert('Failed to process connection link. Please try again or use manual setup.');
-    }
-  };
-
-  // Auto-process answer when host clicks answer URL
-  const processAnswerFromURL = async (answerCode: string) => {
-    try {
-      console.log('[DEBUG] Processing answer from URL...');
-
-      // Decode the answer
-      console.log('[DEBUG] Decoding answer...');
-      const answer = JSON.parse(atob(answerCode));
-      console.log('[DEBUG] Answer decoded successfully');
-
-      // If we already have an active peer connection, just apply the answer
-      if (peerConnectionRef.current && peerConnectionRef.current.signalingState !== 'closed') {
-        console.log('[DEBUG] Using existing peer connection, state:', peerConnectionRef.current.signalingState);
-        await peerConnectionRef.current.setRemoteDescription(answer);
-        console.log('[DEBUG] Remote description set successfully');
-        setNetworkRole('host');
-        return;
-      }
-
-      // Otherwise, restore from localStorage
-      console.log('[DEBUG] No active peer connection, restoring from localStorage...');
-      const savedState = loadConnectionState();
-
-      if (!savedState) {
-        console.error('[DEBUG] No saved state found in localStorage');
-        alert('Connection expired or not found. Please start a new connection.');
-        clearConnectionState();
-        return;
-      }
-
-      console.log('[DEBUG] Saved state found, recreating peer connection...');
-
-      // Recreate the peer connection
-      const config = {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' }
-        ]
-      };
-
-      const pc = new RTCPeerConnection(config);
-      peerConnectionRef.current = pc;
-
-      // Recreate data channel
-      const dc = pc.createDataChannel('gameChannel');
-      setDataChannel(dc);
-
-      dc.onopen = () => {
-        console.log('Data channel opened');
-        setIsConnected(true);
-        clearConnectionState(); // Clear after successful connection
-      };
-
-      dc.onmessage = (event) => {
-        handlePeerMessage(JSON.parse(event.data));
-      };
-
-      // Restore local description
-      console.log('[DEBUG] Restoring local description...');
-      await pc.setLocalDescription(savedState.localDescription);
-      console.log('[DEBUG] Local description restored');
-
-      // Apply remote answer
-      console.log('[DEBUG] Applying remote answer...');
-      await pc.setRemoteDescription(answer);
-      console.log('[DEBUG] Remote answer applied successfully');
-
-      setNetworkRole('host');
-      setConnectionMessage('Connection established! Click "Start Game" to begin.');
-      console.log('[DEBUG] Connection process complete!');
-    } catch (error) {
-      console.error('[ERROR] Failed to process answer from URL:', error);
-      console.error('[ERROR] Error details:', error.message, error.stack);
-      alert('Failed to process answer link. Please try again or use manual setup.');
-      clearConnectionState();
-    }
-  };
-
-  // WebRTC Functions
-  const createHostConnection = async () => {
-    const config = {
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' }
-      ]
-    };
-
-    const pc = new RTCPeerConnection(config);
-    peerConnectionRef.current = pc;
-
-    // Create data channel
-    const dc = pc.createDataChannel('gameChannel');
-    setDataChannel(dc);
-
-    dc.onopen = () => {
-      console.log('Data channel opened');
-      setIsConnected(true);
-      clearConnectionState(); // Clear after successful connection
-    };
-
-    dc.onmessage = (event) => {
-      handlePeerMessage(JSON.parse(event.data));
-    };
-
-    // Create offer
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-
-    // Wait for ICE gathering to complete
-    await new Promise<void>((resolve) => {
-      if (pc.iceGatheringState === 'complete') {
-        resolve();
-      } else {
-        pc.addEventListener('icegatheringstatechange', () => {
-          if (pc.iceGatheringState === 'complete') {
-            resolve();
-          }
-        });
-      }
-    });
-
-    // Save to localStorage for later restoration
-    if (pc.localDescription) {
-      saveConnectionState(pc.localDescription);
-    }
-
-    // Generate shareable URL
-    const offerString = btoa(JSON.stringify(pc.localDescription));
-    const shareableURL = `${window.location.origin}${window.location.pathname}#offer=${offerString}`;
-    setConnectionOffer(shareableURL);
-    setNetworkRole('host');
-  };
-  
-  const acceptGuestAnswer = async (answerString) => {
-    try {
-      const answer = JSON.parse(atob(answerString));
-      await peerConnectionRef.current.setRemoteDescription(answer);
-      setGuestAnswerInput('');
-    } catch (error) {
-      alert('Invalid answer code. Please check and try again.');
-    }
-  };
-  
-  const createGuestConnection = async (offerString: string) => {
-    try {
-      let offerCode = offerString;
-      const offerPrefix = '#offer=';
-      const offerIndex = offerCode.indexOf(offerPrefix);
-      if (offerIndex !== -1) {
-        offerCode = offerCode.substring(offerIndex + offerPrefix.length);
-      }
-      
-      const offer = JSON.parse(atob(offerCode));
-
-      const config = {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' }
-        ]
-      };
-
-      const pc = new RTCPeerConnection(config);
-      peerConnectionRef.current = pc;
-
-      pc.ondatachannel = (event) => {
-        const dc = event.channel;
-        setDataChannel(dc);
-
-        dc.onopen = () => {
-          console.log('Data channel opened');
-          setIsConnected(true);
-        };
-
-        dc.onmessage = (event) => {
-          handlePeerMessage(JSON.parse(event.data));
-        };
-      };
-
-      await pc.setRemoteDescription(offer);
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-
-      // Wait for ICE gathering
-      await new Promise<void>((resolve) => {
-        if (pc.iceGatheringState === 'complete') {
-          resolve();
-        } else {
-          pc.addEventListener('icegatheringstatechange', () => {
-            if (pc.iceGatheringState === 'complete') {
-              resolve();
-            }
-          });
-        }
-      });
-
-      // Generate shareable answer URL
-      const answerString = btoa(JSON.stringify(pc.localDescription));
-      const shareableURL = `${window.location.origin}${window.location.pathname}#answer=${answerString}`;
-      setConnectionAnswer(shareableURL);
-      setNetworkRole('guest');
-      setHostOfferInput('');
-    } catch (error) {
-      alert('Invalid offer code. Please check and try again.');
-    }
-  };
-  
-  const handlePeerMessage = (message) => {
-    switch (message.type) {
-      case 'GAME_START':
-        setBoard(message.board);
-        setPlayers(message.players);
-        setGameMode(message.gameMode);
-        setCurrentPlayerIndex(message.currentPlayerIndex);
-        setCurrentColor(message.currentColor);
-        setPlayerMoveCount(message.playerMoveCount);
-        setRandomPlayerColor(message.randomPlayerColor);
-        
-        // Handle timed game settings
-        setIsTimedGame(message.isTimedGame);
-        if (message.isTimedGame) {
-          setTimeSetting(message.timeSetting);
-          const initialTime = message.timeSetting * 60;
-          setPlayerTimes(message.players.map(() => initialTime));
-        } else {
-          setPlayerTimes([]);
-        }
-
-        // Handle points game settings
-        setIsPointsGame(message.isPointsGame);
-        if (message.isPointsGame) {
-          setPlayerScores(message.players.map(() => 0));
-          setTargetScore(message.targetScore);
-        } else {
-          setPlayerScores([]);
-        }
-
-        setGameState('playing');
-        break;
-        
-      case 'GAME_OVER':
-        if (message.winner) {
-          setWinner(message.winner);
-        }
-        setGameState('finished');
-        break;
-        
-      case 'MOVE_MADE':
-        setBoard(message.board);
-        setCurrentPlayerIndex(message.currentPlayerIndex);
-        setCurrentColor(message.currentColor);
-        setPlayerMoveCount(message.playerMoveCount);
-        setMoveHistory(message.moveHistory);
-        setLastMove(message.lastMove);
-        if (message.randomPlayerColor) {
-          setRandomPlayerColor(message.randomPlayerColor);
-        }
-        if (message.playerTimes) {
-          setPlayerTimes(message.playerTimes);
-        }
-        if (message.playerScores) {
-          setPlayerScores(message.playerScores);
-        }
-        if (message.winner) {
-          setWinner(message.winner);
-          setGameState('finished');
-        } else {
-          setGameState('playing');
-        }
-        break;
-    }
-  };
-  
-  const broadcastMove = (newBoard, newPlayerIndex, newColor, newMoveCount, newHistory, newRandomColor, winnerInfo, newGameState = 'playing', newLastMove = null) => {
-    if (playMode === 'network' && dataChannel && dataChannel.readyState === 'open') {
-      dataChannel.send(JSON.stringify({
+  // Broadcast move to network peer using WebRTC hook
+  const broadcastMove = (newBoard: any, newPlayerIndex: number, newColor: 'white' | 'black', newMoveCount: number[], newHistory: Move[], newRandomColor: 'white' | 'black', winnerInfo: any, newGameState = 'playing', newLastMove: LastMove | null = null) => {
+    if (playMode === 'network') {
+      webRTCBroadcast({
         type: 'MOVE_MADE',
         board: newBoard,
         currentPlayerIndex: newPlayerIndex,
@@ -583,7 +352,7 @@ const ChaosChess = () => {
         lastMove: newLastMove,
         playerTimes,
         playerScores
-      }));
+      });
     }
   };
   
@@ -611,6 +380,18 @@ const ChaosChess = () => {
     } else {
       return movesAreEven ? 'black' : 'white';
     }
+  };
+
+  // Check if it's the current network user's turn
+  const isMyTurn = (): boolean => {
+    if (playMode === 'local') {
+      return true; // In local mode, anyone can move
+    }
+
+    // In network mode, map network role to player index
+    // Host = Player 0, Guest = Player 1
+    const myPlayerIndex = networkRole === 'host' ? 0 : 1;
+    return currentPlayerIndex === myPlayerIndex;
   };
 
   const getValidMovesForPiece = (row: number, col: number) => {
@@ -680,8 +461,13 @@ const ChaosChess = () => {
     }, 100);
   };
 
-  const handleSquareClick = (row, col) => {
+  const handleSquareClick = (row: number, col: number) => {
     if (gameState !== 'playing' || winner) return;
+
+    // In network mode, prevent moves when it's not your turn
+    if (!isMyTurn()) {
+      return; // Silently ignore clicks when it's not your turn
+    }
 
     const piece = board[row][col];
     const currentPlayerColor = getPlayerColor(currentPlayerIndex, playerMoveCount[currentPlayerIndex] || 0);
@@ -939,6 +725,15 @@ const ChaosChess = () => {
               {isInCheck(getPlayerColor(currentPlayerIndex, playerMoveCount[currentPlayerIndex] || 0), board, lastMove) && (
                 <div className="mt-2 text-red-400 font-bold">⚠️ CHECK! ⚠️</div>
               )}
+              {playMode === 'network' && (
+                <div className={`mt-3 px-4 py-2 rounded-lg text-sm font-semibold ${
+                  isMyTurn()
+                    ? 'bg-green-500 text-white'
+                    : 'bg-slate-600 text-slate-300'
+                }`}>
+                  {isMyTurn() ? '✓ Your Turn - Make a Move!' : '⏳ Waiting for Opponent...'}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1000,14 +795,8 @@ const ChaosChess = () => {
             setMoveHistory={setMoveHistory}
             setSelectedSquare={setSelectedSquare}
             setValidMoves={setValidMoves}
-            peerConnectionRef={peerConnectionRef}
-            dataChannel={dataChannel}
             setPlayMode={setPlayMode}
-            setNetworkRole={setNetworkRole}
-            setDataChannel={setDataChannel}
-            setIsConnected={setIsConnected}
-            setConnectionOffer={setConnectionOffer}
-            setConnectionAnswer={setConnectionAnswer}
+            resetConnection={resetConnection}
             moveHistory={moveHistory}
           />
         </div>

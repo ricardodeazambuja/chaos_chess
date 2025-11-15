@@ -1,7 +1,26 @@
 import React from 'react';
 import { RotateCcw } from 'lucide-react';
 
-const GameInfoPanel = ({
+interface GameInfoPanelProps {
+  players: any[];
+  gameMode: string;
+  currentPlayerIndex: number;
+  getPlayerColor: (index: number, moveCount: number) => 'white' | 'black';
+  playerMoveCount: number[];
+  capturedPieces: { white: string[]; black: string[] };
+  getPieceSymbol: (piece: any) => string;
+  getPieceStyle: (color: 'white' | 'black') => { color: string; textShadow: string };
+  setGameState: (state: string) => void;
+  setWinner: (winner: any) => void;
+  setMoveHistory: (history: any[]) => void;
+  setSelectedSquare: (square: any) => void;
+  setValidMoves: (moves: any[]) => void;
+  setPlayMode: (mode: 'local' | 'network') => void;
+  resetConnection: () => void;
+  moveHistory: any[];
+}
+
+const GameInfoPanel: React.FC<GameInfoPanelProps> = ({
   players,
   gameMode,
   currentPlayerIndex,
@@ -15,14 +34,8 @@ const GameInfoPanel = ({
   setMoveHistory,
   setSelectedSquare,
   setValidMoves,
-  peerConnectionRef,
-  dataChannel,
   setPlayMode,
-  setNetworkRole,
-  setDataChannel,
-  setIsConnected,
-  setConnectionOffer,
-  setConnectionAnswer,
+  resetConnection,
   moveHistory,
 }) => {
   const handleNewGame = () => {
@@ -31,20 +44,8 @@ const GameInfoPanel = ({
     setMoveHistory([]);
     setSelectedSquare(null);
     setValidMoves([]);
-    // Reset network state
-    if (peerConnectionRef.current) {
-      peerConnectionRef.current.close();
-    }
-    if (dataChannel) {
-      dataChannel.close();
-    }
     setPlayMode('local');
-    setNetworkRole(null);
-    peerConnectionRef.current = null;
-    setDataChannel(null);
-    setIsConnected(false);
-    setConnectionOffer('');
-    setConnectionAnswer('');
+    resetConnection();
   };
 
   return (
