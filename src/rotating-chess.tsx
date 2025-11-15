@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Crown, Users, RotateCcw } from 'lucide-react';
+import { Crown, Users, RotateCcw, Clock } from 'lucide-react';
 
 interface Piece {
   type: 'king' | 'queen' | 'rook' | 'bishop' | 'knight' | 'pawn';
@@ -91,6 +91,13 @@ const clearConnectionState = () => {
   }
 };
 
+const formatTime = (seconds: number): string => {
+  if (seconds === undefined || seconds < 0) return '0:00';
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+};
+
 const ChessGame = () => {
   const [gameState, setGameState] = useState<'setup' | 'playing' | 'promoting' | 'finished'>('setup');
   const [players, setPlayers] = useState<Player[]>([{ name: 'Player 1' }, { name: 'Player 2' }]);
@@ -102,8 +109,13 @@ const ChessGame = () => {
   const [moveHistory, setMoveHistory] = useState<Move[]>([]);
   const [winner, setWinner] = useState<string | null>(null);
   const [playerMoveCount, setPlayerMoveCount] = useState<number[]>([0, 0]);
-  const [gameMode, setGameMode] = useState<'rotating' | 'random'>('rotating');
+  const [gameMode, setGameMode] = useState<'rotating' | 'random' | 'normie'>('rotating');
   const [randomPlayerColor, setRandomPlayerColor] = useState<'white' | 'black'>('white');
+
+  // State for timed games
+  const [isTimedGame, setIsTimedGame] = useState<boolean>(false);
+  const [timeSetting, setTimeSetting] = useState<number>(5); // In minutes
+  const [playerTimes, setPlayerTimes] = useState<number[]>([]); // In seconds
 
   // State for Pawn Promotion
   const [promotionSquare, setPromotionSquare] = useState<PromotionSquare | null>(null);
@@ -113,6 +125,9 @@ const ChessGame = () => {
 
   // State for Captured Pieces
   const [capturedPieces, setCapturedPieces] = useState<CapturedPieces>({ white: [], black: [] });
+
+  // State for single move highlight
+  const [singleMove, setSingleMove] = useState<{ from: {row: number, col: number}, to: {row: number, col: number} } | null>(null);
 
   // Network play state
   const [playMode, setPlayMode] = useState<'local' | 'network'>('local');
@@ -182,6 +197,14 @@ const ChessGame = () => {
 
     // Set initial color for the first player
     setRandomPlayerColor(initialRandomColor);
+
+    // Initialize timers if it's a timed game
+    if (isTimedGame) {
+      const initialTime = timeSetting * 60;
+      setPlayerTimes(players.map(() => initialTime));
+    } else {
+      setPlayerTimes([]);
+    }
     
     // If host, broadcast game start to peers
     if (playMode === 'network' && networkRole === 'host' && dataChannel && dataChannel.readyState === 'open') {
@@ -193,7 +216,9 @@ const ChessGame = () => {
         currentPlayerIndex: startingPlayerIndex,
         currentColor: startingColor,
         playerMoveCount: players.map(() => 0),
-        randomPlayerColor: initialRandomColor
+        randomPlayerColor: initialRandomColor,
+        isTimedGame,
+        timeSetting
       }));
     }
   };
@@ -232,6 +257,72 @@ const ChessGame = () => {
       window.removeEventListener('hashchange', processHash);
     };
   }, []);
+
+  // Effect to find and highlight a single possible move
+  useEffect(() => {
+    if (gameState !== 'playing' || winner) {
+      setSingleMove(null);
+      return;
+    }
+
+    const allMoves: { from: { row: number; col: number }; to: { row: number; col: number } }[] = [];
+    const currentPlayerColor = getPlayerColor(currentPlayerIndex, playerMoveCount[currentPlayerIndex] || 0);
+
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        const piece = board[r][c];
+        if (piece && piece.color === currentPlayerColor) {
+          const moves = getValidMovesForPiece(r, c);
+          if (moves.length > 0) {
+            for (const move of moves) {
+              allMoves.push({ from: { row: r, col: c }, to: move });
+            }
+          }
+        }
+      }
+    }
+
+    if (allMoves.length === 1) {
+      setSingleMove(allMoves[0]);
+    } else {
+      setSingleMove(null);
+    }
+  }, [currentPlayerIndex, board, gameState, winner]);
+
+  // Effect for game timer countdown
+  useEffect(() => {
+    if (gameState !== 'playing' || !isTimedGame || winner) {
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setPlayerTimes(prevTimes => {
+        const newTimes = [...prevTimes];
+        if (newTimes[currentPlayerIndex] > 0) {
+          newTimes[currentPlayerIndex]--;
+        }
+        return newTimes;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [gameState, isTimedGame, winner, currentPlayerIndex]);
+
+  // Effect to check for timeout
+  useEffect(() => {
+    if (!isTimedGame || gameState !== 'playing') return;
+
+    const timedOutPlayerIndex = playerTimes.findIndex(time => time === 0);
+    if (timedOutPlayerIndex !== -1) {
+      if (players.length === 2) {
+        const winnerIndex = 1 - timedOutPlayerIndex;
+        setWinner(`${players[winnerIndex].name} wins on time!`);
+      } else {
+        setWinner(`${players[timedOutPlayerIndex].name} lost on time.`);
+      }
+      setGameState('finished');
+    }
+  }, [playerTimes, isTimedGame, players, gameState]);
 
   // Auto-process offer when guest clicks offer URL
   const processOfferFromURL = async (offerCode: string) => {
@@ -459,6 +550,17 @@ const ChessGame = () => {
         setCurrentColor(message.currentColor);
         setPlayerMoveCount(message.playerMoveCount);
         setRandomPlayerColor(message.randomPlayerColor);
+        
+        // Handle timed game settings
+        setIsTimedGame(message.isTimedGame);
+        if (message.isTimedGame) {
+          setTimeSetting(message.timeSetting);
+          const initialTime = message.timeSetting * 60;
+          setPlayerTimes(message.players.map(() => initialTime));
+        } else {
+          setPlayerTimes([]);
+        }
+
         setGameState('playing');
         break;
         
@@ -471,6 +573,9 @@ const ChessGame = () => {
         setLastMove(message.lastMove);
         if (message.randomPlayerColor) {
           setRandomPlayerColor(message.randomPlayerColor);
+        }
+        if (message.playerTimes) {
+          setPlayerTimes(message.playerTimes);
         }
         if (message.winner) {
           setWinner(message.winner);
@@ -494,12 +599,16 @@ const ChessGame = () => {
         randomPlayerColor: newRandomColor,
         winner: winnerName,
         gameState: newGameState,
-        lastMove: newLastMove
+        lastMove: newLastMove,
+        playerTimes
       }));
     }
   };
   
   const getPlayerColor = (playerIndex: number, moveCount: number): 'white' | 'black' => {
+    if (gameMode === 'normie') {
+      return playerIndex % 2 === 0 ? 'white' : 'black';
+    }
     if (gameMode === 'random') {
       // In random mode, use the randomly assigned color for current player
       if (playerIndex === currentPlayerIndex) {
@@ -695,6 +804,8 @@ const ChessGame = () => {
     const newBoard = testBoard.map(row => [...row]);
     const piece = newBoard[fromRow][fromCol];
 
+    if (!piece) return false; // Should not happen if called correctly
+
     // Simulate castling move for check test
     if (piece.type === 'king' && Math.abs(toCol - fromCol) === 2) {
       newBoard[toRow][toCol] = { ...piece, hasMoved: true };
@@ -709,6 +820,10 @@ const ChessGame = () => {
         newBoard[fromRow][rookCol] = null;
       }
     } else {
+      // Handle en-passant capture simulation
+      if (piece.type === 'pawn' && toCol !== fromCol && !newBoard[toRow][toCol]) {
+        newBoard[fromRow][toCol] = null; // Remove captured pawn
+      }
       newBoard[toRow][toCol] = piece;
       newBoard[fromRow][fromCol] = null;
     }
@@ -1163,10 +1278,26 @@ const ChessGame = () => {
                     <div className="font-bold text-slate-800">🎲 Random Chaos</div>
                     <div className="text-sm text-slate-600">Each turn, get a random color to play!</div>
                   </button>
+                  <button
+                    onClick={() => {
+                      setGameMode('normie');
+                      if (players.length > 2) {
+                        setPlayers(players.slice(0, 2));
+                      }
+                    }}
+                    className={`w-full p-4 rounded-lg border-2 text-left transition-all ${
+                      gameMode === 'normie' 
+                        ? 'border-amber-500 bg-amber-50' 
+                        : 'border-slate-300 bg-white hover:border-amber-300'
+                    }`}
+                  >
+                    <div className="font-bold text-slate-800">♖ Normie Mode</div>
+                    <div className="text-sm text-slate-600">Just a regular game of chess.</div>
+                  </button>
                 </div>
               </div>
               
-              {playMode === 'local' && (
+              {playMode === 'local' && gameMode !== 'normie' && (
                 <div className="space-y-3 mb-6">
                   {players.map((player, index) => (
                     <div key={index} className="flex gap-2">
@@ -1190,7 +1321,7 @@ const ChessGame = () => {
                 </div>
               )}
               
-              {playMode === 'local' && players.length < 6 && (
+              {playMode === 'local' && gameMode !== 'normie' && players.length < 6 && (
                 <button
                   onClick={addPlayer}
                   className="w-full mb-4 px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 flex items-center justify-center gap-2"
@@ -1200,6 +1331,43 @@ const ChessGame = () => {
                 </button>
               )}
               
+              {/* Time Controls */}
+              <div className="mb-6">
+                <label className="block text-sm font-bold text-slate-700 mb-2">Time Controls</label>
+                <div className="p-4 rounded-lg border-2 border-slate-300 bg-white">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center">
+                      <Clock className="mr-2 text-slate-600" size={20} />
+                      <span className="font-bold text-slate-800">Timed Game</span>
+                    </div>
+                    <button
+                      onClick={() => setIsTimedGame(!isTimedGame)}
+                      className={`relative inline-flex items-center h-6 rounded-full w-11 transition-colors ${
+                        isTimedGame ? 'bg-green-500' : 'bg-slate-400'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block w-4 h-4 transform bg-white rounded-full transition-transform ${
+                          isTimedGame ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
+                  {isTimedGame && (
+                    <div className="mt-4">
+                      <label className="block text-xs font-bold text-slate-600 mb-1">Time per player (minutes)</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={timeSetting}
+                        onChange={(e) => setTimeSetting(Number(e.target.value))}
+                        className="w-full px-3 py-2 border-2 border-slate-300 rounded-lg text-sm"
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+
               <button
                 onClick={startGame}
                 className="w-full px-6 py-3 bg-amber-500 text-white font-bold rounded-lg hover:bg-amber-600 transition-colors"
@@ -1285,6 +1453,22 @@ const ChessGame = () => {
           )}
         </div>
 
+        {isTimedGame && (
+          <div className="flex justify-center gap-4 mb-4">
+            {players.map((player, index) => (
+              <div
+                key={index}
+                className={`p-3 rounded-lg text-center w-32 ${
+                  index === currentPlayerIndex ? 'bg-amber-500 text-white' : 'bg-slate-700 text-slate-300'
+                }`}
+              >
+                <div className="font-semibold text-sm truncate">{player.name}</div>
+                <div className="font-mono text-2xl font-bold">{formatTime(playerTimes[index])}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className="flex flex-col lg:flex-row gap-6 items-start justify-center">
           <div className="bg-slate-800 p-4 rounded-xl shadow-2xl">
             <div className="grid grid-cols-8 gap-0 border-4 border-amber-600">
@@ -1293,6 +1477,17 @@ const ChessGame = () => {
                   const isLight = (rowIndex + colIndex) % 2 === 0;
                   const isSelected = selectedSquare && selectedSquare.row === rowIndex && selectedSquare.col === colIndex;
                   const isValidMoveSquare = validMoves.some(m => m.row === rowIndex && m.col === colIndex);
+                  const isSingleMoveFrom = singleMove && singleMove.from.row === rowIndex && singleMove.from.col === colIndex;
+                  const isSingleMoveTo = singleMove && singleMove.to.row === rowIndex && singleMove.to.col === colIndex;
+                  const isSingleMove = isSingleMoveFrom || isSingleMoveTo;
+
+                  const ringClass = isSelected
+                    ? 'ring-4 ring-blue-500'
+                    : isValidMoveSquare
+                      ? 'ring-4 ring-green-500'
+                      : isSingleMove
+                        ? 'ring-4 ring-purple-500'
+                        : '';
                   
                   return (
                     <div
@@ -1300,8 +1495,7 @@ const ChessGame = () => {
                       onClick={() => handleSquareClick(rowIndex, colIndex)}
                       className={`w-12 h-12 md:w-16 md:h-16 flex items-center justify-center text-4xl md:text-5xl cursor-pointer
                         ${isLight ? 'bg-amber-100' : 'bg-amber-800'}
-                        ${isSelected ? 'ring-4 ring-blue-500' : ''}
-                        ${isValidMoveSquare ? 'ring-4 ring-green-500' : ''}
+                        ${ringClass}
                         hover:opacity-80 transition-all`}
                     >
                       <span style={piece ? getPieceStyle(piece.color) : {}}>
@@ -1317,7 +1511,7 @@ const ChessGame = () => {
           <div className="bg-white rounded-xl shadow-xl p-6 min-w-[280px]">
             <h3 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
               <RotateCcw size={20} />
-              Players {gameMode === 'random' ? '🎲' : '🔄'}
+              Players {gameMode === 'normie' ? '♖' : gameMode === 'random' ? '🎲' : '🔄'}
             </h3>
             <div className="space-y-2 mb-6">
               {players.map((player, index) => (
@@ -1331,9 +1525,11 @@ const ChessGame = () => {
                 >
                   <div className="font-semibold">{player.name}</div>
                   <div className="text-sm text-slate-600">
-                    {gameMode === 'random' 
-                      ? (index === currentPlayerIndex ? `Playing: ${getPlayerColor(index, playerMoveCount[index] || 0)}` : '? Random ?')
-                      : `Next plays: ${getPlayerColor(index, playerMoveCount[index] || 0)}`
+                    {gameMode === 'normie'
+                      ? `Playing as ${getPlayerColor(index, 0)}`
+                      : gameMode === 'random' 
+                        ? (index === currentPlayerIndex ? `Playing: ${getPlayerColor(index, playerMoveCount[index] || 0)}` : '? Random ?')
+                        : `Next plays: ${getPlayerColor(index, playerMoveCount[index] || 0)}`
                     }
                     {index === currentPlayerIndex && gameMode !== 'random' && ' (playing now)'}
                   </div>
