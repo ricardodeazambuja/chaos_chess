@@ -211,6 +211,7 @@ const ChaosChess = () => {
     setHostOfferInput,
     guestAnswerInput,
     setGuestAnswerInput,
+    isLoading,
     isConnected,
     setIsConnected,
     connectionMessage,
@@ -715,6 +716,7 @@ const ChaosChess = () => {
         setTargetScore={setTargetScore}
         playMode={playMode}
         setPlayMode={setPlayMode}
+        isLoading={isLoading}
         networkRole={networkRole}
         setNetworkRole={setNetworkRole}
         createHostConnection={createHostConnection}

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Crown, Users, RotateCcw, Clock, DollarSign, Copy, ClipboardPaste } from 'lucide-react';
+import { Crown, Users, RotateCcw, Clock, DollarSign, Copy, ClipboardPaste, Loader } from 'lucide-react';
 
 const SetupScreen = ({
   players,
@@ -16,6 +16,7 @@ const SetupScreen = ({
   setTargetScore,
   playMode,
   setPlayMode,
+  isLoading,
   networkRole,
   setNetworkRole,
   createHostConnection,
@@ -51,9 +52,10 @@ const SetupScreen = ({
           <h3 className="font-bold text-slate-800 text-center">Network Game Setup</h3>
           <button
             onClick={createHostConnection}
-            className="w-full px-4 py-3 bg-green-500 text-white font-bold rounded-lg hover:bg-green-600 transition-transform hover:scale-105"
+            disabled={isLoading}
+            className="w-full px-4 py-3 bg-green-500 text-white font-bold rounded-lg hover:bg-green-600 transition-transform hover:scale-105 disabled:opacity-50 flex items-center justify-center gap-2"
           >
-            Step 1: Host a New Game
+            {isLoading && networkRole === null ? <Loader className="animate-spin" size={20} /> : 'Step 1: Host a New Game'}
           </button>
           <div className="text-center text-sm text-slate-600 font-bold">OR</div>
           <div className="space-y-2">
@@ -67,10 +69,10 @@ const SetupScreen = ({
             />
             <button
               onClick={() => createGuestConnection(hostOfferInput)}
-              disabled={!hostOfferInput}
-              className="w-full mt-2 px-4 py-3 bg-blue-500 text-white font-bold rounded-lg hover:bg-blue-600 disabled:opacity-50 transition-transform hover:scale-105"
+              disabled={!hostOfferInput || isLoading}
+              className="w-full mt-2 px-4 py-3 bg-blue-500 text-white font-bold rounded-lg hover:bg-blue-600 disabled:opacity-50 transition-transform hover:scale-105 flex items-center justify-center gap-2"
             >
-              Join Game
+              {isLoading && hostOfferInput ? <Loader className="animate-spin" size={20} /> : 'Join Game'}
             </button>
           </div>
         </div>
@@ -114,10 +116,11 @@ const SetupScreen = ({
             />
             <button
               onClick={() => acceptGuestAnswer(guestAnswerInput)}
-              disabled={!guestAnswerInput}
-              className="w-full mt-2 px-4 py-2 bg-purple-500 text-white font-bold rounded-lg hover:bg-purple-600 disabled:opacity-50"
+              disabled={!guestAnswerInput || isLoading}
+              className="w-full mt-2 px-4 py-2 bg-purple-500 text-white font-bold rounded-lg hover:bg-purple-600 disabled:opacity-50 flex items-center justify-center gap-2"
             >
-              <ClipboardPaste size={16} className="inline mr-2" /> Connect to Guest
+              {isLoading ? <Loader className="animate-spin" size={16} /> : <ClipboardPaste size={16} />}
+              {isLoading ? 'Connecting...' : 'Connect to Guest'}
             </button>
           </div>
         </div>

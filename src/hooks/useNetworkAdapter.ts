@@ -45,6 +45,7 @@ export const useNetworkAdapter = ({ onMessage, adapterType = 'webrtc' }: UseNetw
   // State (mirrors adapter state for React reactivity)
   // ============================================================================
 
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isConnected, setIsConnected] = useState<boolean>(adapter.isConnected);
   const [networkRole, setNetworkRole] = useState<'host' | 'guest' | null>(adapter.role);
   const [connectionMessage, setConnectionMessage] = useState<string | null>(adapter.statusMessage);
@@ -105,24 +106,39 @@ export const useNetworkAdapter = ({ onMessage, adapterType = 'webrtc' }: UseNetw
   // ============================================================================
 
   const createHostConnection = useCallback(async () => {
-    const connectionInfo = await adapter.createConnection();
-    setConnectionOffer(connectionInfo.code);
-    setNetworkRole('host');
+    setIsLoading(true);
+    try {
+      const connectionInfo = await adapter.createConnection();
+      setConnectionOffer(connectionInfo.code);
+      setNetworkRole('host');
+    } finally {
+      setIsLoading(false);
+    }
   }, [adapter]);
 
   const createGuestConnection = useCallback(async (offerCode: string) => {
-    await adapter.joinConnection(offerCode);
-    // Get answer code from adapter
-    if (adapter.getConnectionData) {
-      const { answer } = adapter.getConnectionData();
-      if (answer) setConnectionAnswer(answer);
+    setIsLoading(true);
+    try {
+      await adapter.joinConnection(offerCode);
+      // Get answer code from adapter
+      if (adapter.getConnectionData) {
+        const { answer } = adapter.getConnectionData();
+        if (answer) setConnectionAnswer(answer);
+      }
+      setNetworkRole('guest');
+    } finally {
+      setIsLoading(false);
     }
-    setNetworkRole('guest');
   }, [adapter]);
 
   const acceptGuestAnswer = useCallback(async (answerCode: string) => {
     if (adapter.acceptAnswer) {
-      await adapter.acceptAnswer(answerCode);
+      setIsLoading(true);
+      try {
+        await adapter.acceptAnswer(answerCode);
+      } finally {
+        setIsLoading(false);
+      }
     }
   }, [adapter]);
 
@@ -157,6 +173,7 @@ export const useNetworkAdapter = ({ onMessage, adapterType = 'webrtc' }: UseNetw
     setGuestAnswerInput,
 
     // Connection state
+    isLoading,
     isConnected,
     setIsConnected, // Kept for compatibility, but adapter manages this
     connectionMessage,
