@@ -4,7 +4,8 @@ import SetupScreen from './components/SetupScreen';
 import PromotionModal from './components/PromotionModal';
 import ChessBoard from './components/ChessBoard';
 import GameInfoPanel from './components/GameInfoPanel';
-import { useWebRTC } from './hooks/useWebRTC';
+import ChatBox from './components/ChatBox';
+import { useNetworkAdapter } from './hooks/useNetworkAdapter';
 import type { Piece, LastMove } from './chess-logic';
 import {
   BOARD_SIZE,
@@ -49,6 +50,13 @@ interface PromotionSquare {
 interface CapturedPieces {
   white: Piece['type'][];
   black: Piece['type'][];
+}
+
+interface ChatMessage {
+  playerName: string;
+  message: string;
+  timestamp: number;
+  isOwn?: boolean;
 }
 
 const formatTime = (seconds: number): string => {
@@ -99,9 +107,30 @@ const ChaosChess = () => {
   // Network play state
   const [playMode, setPlayMode] = useState<'local' | 'network'>('local');
 
+  // Chat state for network play
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+
   // Message handler for WebRTC peer messages
   const handlePeerMessage = useCallback((message: any) => {
     switch (message.type) {
+      case 'PLAYER_NAME_UPDATE':
+        // Guest sends their name to host
+        setPlayers(prev => {
+          const newPlayers = [...prev];
+          newPlayers[1] = { ...newPlayers[1], name: message.playerName };
+          return newPlayers;
+        });
+        break;
+
+      case 'CHAT_MESSAGE':
+        setChatMessages(prev => [...prev, {
+          playerName: message.playerName,
+          message: message.message,
+          timestamp: message.timestamp,
+          isOwn: false,
+        }]);
+        break;
+
       case 'GAME_START':
         setBoard(message.board);
         setPlayers(message.players);
@@ -166,9 +195,8 @@ const ChaosChess = () => {
     }
   }, []);
 
-  // Initialize WebRTC hook
+  // Initialize Network Adapter hook (using WebRTC adapter by default)
   const {
-    dataChannel,
     connectionOffer,
     connectionAnswer,
     hostOfferInput,
@@ -186,7 +214,7 @@ const ChaosChess = () => {
     createGuestConnection,
     broadcastMove: webRTCBroadcast,
     resetConnection
-  } = useWebRTC({ onMessage: handlePeerMessage });
+  } = useNetworkAdapter({ onMessage: handlePeerMessage });
 
   const startGame = () => {
     const startingPlayerIndex = Math.floor(Math.random() * players.length);
@@ -243,12 +271,6 @@ const ChaosChess = () => {
     }
   };
 
-  // Auto-switch to network mode when URL hash is processed
-  useEffect(() => {
-    if (networkRole !== null && playMode === 'local') {
-      setPlayMode('network');
-    }
-  }, [networkRole, playMode]);
 
   // Effect to find and highlight a single possible move
   useEffect(() => {
@@ -355,6 +377,30 @@ const ChaosChess = () => {
       });
     }
   };
+
+  // Send chat message
+  const sendChatMessage = (message: string) => {
+    if (playMode === 'network') {
+      const myPlayerIndex = networkRole === 'host' ? 0 : 1;
+      const chatMsg: ChatMessage = {
+        playerName: players[myPlayerIndex]?.name || `Player ${myPlayerIndex + 1}`,
+        message,
+        timestamp: Date.now(),
+        isOwn: true,
+      };
+
+      // Add to local chat
+      setChatMessages(prev => [...prev, chatMsg]);
+
+      // Broadcast to peer
+      webRTCBroadcast({
+        type: 'CHAT_MESSAGE',
+        playerName: chatMsg.playerName,
+        message: chatMsg.message,
+        timestamp: chatMsg.timestamp,
+      });
+    }
+  };
   
   const getPlayerColor = (playerIndex: number, moveCount: number): 'white' | 'black' => {
     if (gameMode === 'normie') {
@@ -416,7 +462,6 @@ const ChaosChess = () => {
     // CRITICAL FIX: Use the actual piece color from the move, not currentColor state
     // This ensures we always check the opponent's color for checkmate, regardless of turn order
     if (!lastMoveAfterMove || !lastMoveAfterMove.piece) {
-      console.error('advanceTurn called without valid lastMove!');
       return;
     }
 
@@ -635,6 +680,14 @@ const ChaosChess = () => {
     const newPlayers = [...players];
     newPlayers[index].name = name;
     setPlayers(newPlayers);
+
+    // If guest is updating their name, broadcast to host
+    if (playMode === 'network' && networkRole === 'guest' && index === 1) {
+      webRTCBroadcast({
+        type: 'PLAYER_NAME_UPDATE',
+        playerName: name,
+      });
+    }
   };
 
   if (gameState === 'setup') {
@@ -660,11 +713,14 @@ const ChaosChess = () => {
         createGuestConnection={createGuestConnection}
         hostOfferInput={hostOfferInput}
         setHostOfferInput={setHostOfferInput}
+        guestAnswerInput={guestAnswerInput}
+        setGuestAnswerInput={setGuestAnswerInput}
         connectionOffer={connectionOffer}
         isConnected={isConnected}
         setIsConnected={setIsConnected}
         connectionMessage={connectionMessage}
         connectionAnswer={connectionAnswer}
+        acceptGuestAnswer={acceptGuestAnswer}
         startGame={startGame}
         addPlayer={addPlayer}
         removePlayer={removePlayer}
@@ -791,24 +847,38 @@ const ChaosChess = () => {
             getPieceSymbol={getPieceSymbol}
           />
 
-          <GameInfoPanel
-            players={players}
-            gameMode={gameMode}
-            currentPlayerIndex={currentPlayerIndex}
-            getPlayerColor={getPlayerColor}
-            playerMoveCount={playerMoveCount}
-            capturedPieces={capturedPieces}
-            getPieceSymbol={getPieceSymbol}
-            getPieceStyle={getPieceStyle}
-            setGameState={setGameState}
-            setWinner={setWinner}
-            setMoveHistory={setMoveHistory}
-            setSelectedSquare={setSelectedSquare}
-            setValidMoves={setValidMoves}
-            setPlayMode={setPlayMode}
-            resetConnection={resetConnection}
-            moveHistory={moveHistory}
-          />
+          <div className="flex flex-col gap-6">
+            <GameInfoPanel
+              players={players}
+              gameMode={gameMode}
+              currentPlayerIndex={currentPlayerIndex}
+              getPlayerColor={getPlayerColor}
+              playerMoveCount={playerMoveCount}
+              capturedPieces={capturedPieces}
+              getPieceSymbol={getPieceSymbol}
+              getPieceStyle={getPieceStyle}
+              setGameState={setGameState}
+              setWinner={setWinner}
+              setMoveHistory={setMoveHistory}
+              setSelectedSquare={setSelectedSquare}
+              setValidMoves={setValidMoves}
+              setPlayMode={setPlayMode}
+              resetConnection={resetConnection}
+              moveHistory={moveHistory}
+            />
+
+            {/* Chat for network mode */}
+            {playMode === 'network' && (
+              <div className="w-full lg:w-80 h-96">
+                <ChatBox
+                  messages={chatMessages}
+                  onSendMessage={sendChatMessage}
+                  playerName={players[networkRole === 'host' ? 0 : 1]?.name || 'Player'}
+                  disabled={!isConnected}
+                />
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

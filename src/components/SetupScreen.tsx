@@ -22,10 +22,13 @@ const SetupScreen = ({
   createGuestConnection,
   hostOfferInput,
   setHostOfferInput,
+  guestAnswerInput, // Add this line
+  setGuestAnswerInput, // Add this line
   connectionOffer,
   isConnected,
   connectionMessage,
   connectionAnswer,
+  acceptGuestAnswer, // Add this line
   startGame,
   addPlayer,
   removePlayer,
@@ -112,21 +115,41 @@ const SetupScreen = ({
         {/* Host Connection Display */}
         {playMode === 'network' && networkRole === 'host' && !isConnected && (
           <div className="mb-6 p-4 bg-green-50 rounded-lg border-2 border-green-300">
-            <h3 className="font-bold text-slate-800 mb-2">🔗 Share this link with your friend</h3>
-            <p className="text-sm text-slate-600 mb-2">They can click it to join directly:</p>
+            <h3 className="font-bold text-slate-800 mb-2">🔗 Share this code with your friend</h3>
+            <p className="text-sm text-slate-600 mb-2">Copy and send this offer code to them:</p>
             <div className="bg-white p-3 rounded-lg border-2 border-slate-300 mb-2 break-all text-xs font-mono max-h-24 overflow-y-auto">
               {connectionOffer}
             </div>
             <button
               onClick={() => {
                 navigator.clipboard.writeText(connectionOffer);
-                alert('Link copied! Share it with your friend.');
+                alert('Code copied! Share it with your friend.');
               }}
               className="w-full px-3 py-2 bg-green-500 text-white font-bold rounded-lg hover:bg-green-600 text-sm"
             >
-              📋 Copy Link
+              📋 Copy Offer Code
             </button>
             <p className="text-xs text-slate-500 mt-2 text-center">Waiting for friend to connect...</p>
+
+            {/* Host accepts guest's answer */}
+            <div className="mt-4 pt-4 border-t border-green-200">
+              <h3 className="font-bold text-slate-800 mb-2">Guest's Answer Code</h3>
+              <p className="text-sm text-slate-600 mb-2">Paste the answer code your friend sent you:</p>
+              <input
+                type="text"
+                placeholder="Paste guest's answer code here"
+                value={guestAnswerInput}
+                onChange={(e) => setGuestAnswerInput(e.target.value)}
+                className="w-full px-3 py-2 border-2 border-slate-300 rounded-lg text-sm mb-2"
+              />
+              <button
+                onClick={() => acceptGuestAnswer(guestAnswerInput)}
+                disabled={!guestAnswerInput}
+                className="w-full px-4 py-2 bg-purple-500 text-white font-bold rounded-lg hover:bg-purple-600 disabled:opacity-50"
+              >
+                🤝 Accept Answer
+              </button>
+            </div>
           </div>
         )}
         
@@ -134,36 +157,54 @@ const SetupScreen = ({
         {playMode === 'network' && networkRole === 'host' && isConnected && (
           <div className="mb-6 p-4 bg-green-50 rounded-lg border-2 border-green-300">
             <h3 className="font-bold text-slate-800 mb-2">✅ Connected!</h3>
-            <p className="text-sm text-slate-600 mb-2">Your friend has joined the game.</p>
-            {connectionMessage && <p className="text-sm text-slate-700 mt-2">{connectionMessage}</p>}
+            <p className="text-sm text-slate-600">Your friend has joined the game. Configure the game settings below and click "Start Game".</p>
           </div>
         )}
         
-        {/* Guest Connection Display */}
-        {playMode === 'network' && networkRole === 'guest' && (
+        {/* Guest Connection Display - Not Connected */}
+        {playMode === 'network' && networkRole === 'guest' && !isConnected && (
           <div className="mb-6 p-4 bg-blue-50 rounded-lg border-2 border-blue-300">
-            <h3 className="font-bold text-slate-800 mb-2">🔗 Send this link back to the host</h3>
-            <p className="text-sm text-slate-600 mb-2">The host can click it to complete the connection:</p>
+            <h3 className="font-bold text-slate-800 mb-2">🔗 Send this code back to the host</h3>
+            <p className="text-sm text-slate-600 mb-2">Copy and send this answer code to the host:</p>
             <div className="bg-white p-3 rounded-lg border-2 border-slate-300 mb-2 break-all text-xs font-mono max-h-24 overflow-y-auto">
               {connectionAnswer}
             </div>
             <button
               onClick={() => {
                 navigator.clipboard.writeText(connectionAnswer);
-                alert('Link copied! Send it back to the host.');
+                alert('Code copied! Send it back to the host.');
               }}
               className="w-full px-3 py-2 bg-blue-500 text-white font-bold rounded-lg hover:bg-blue-600 text-sm"
             >
-              📋 Copy Link
+              📋 Copy Answer Code
             </button>
-            <p className="text-sm text-slate-600 mt-3 text-center">
-              {isConnected ? '✅ Connected! Waiting for host to start...' : '⏳ Waiting for connection...'}
-            </p>
+            <p className="text-sm text-slate-600 mt-3 text-center">⏳ Waiting for connection...</p>
+          </div>
+        )}
+
+        {/* Guest Connection Display - Connected */}
+        {playMode === 'network' && networkRole === 'guest' && isConnected && (
+          <div className="mb-6 p-4 bg-blue-50 rounded-lg border-2 border-blue-300">
+            <h3 className="font-bold text-slate-800 mb-2">✅ Connected!</h3>
+            <p className="text-sm text-slate-600 mb-3">You're connected to the host.</p>
+
+            <div className="mb-4">
+              <label className="block text-sm font-bold text-slate-700 mb-2">Your Name</label>
+              <input
+                type="text"
+                value={players[1]?.name || 'Player 2'}
+                onChange={(e) => updatePlayerName(1, e.target.value)}
+                className="w-full px-3 py-2 border-2 border-slate-300 rounded-lg"
+                placeholder="Enter your name"
+              />
+            </div>
+
+            <p className="text-sm text-slate-600 text-center">⏳ Waiting for host to start the game...</p>
           </div>
         )}
         
-        {/* Show game setup only if local OR network connected */}
-        {(playMode === 'local' || (playMode === 'network' && isConnected)) && (
+        {/* Show game setup only if local OR (network host connected) */}
+        {(playMode === 'local' || (playMode === 'network' && networkRole === 'host' && isConnected)) && (
           <>
             <div className="mb-6">
               <label className="block text-sm font-bold text-slate-700 mb-2">Game Mode</label>
