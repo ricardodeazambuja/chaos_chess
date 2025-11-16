@@ -5,6 +5,7 @@ import PromotionModal from './components/PromotionModal';
 import ChessBoard from './components/ChessBoard';
 import GameInfoPanel from './components/GameInfoPanel';
 import ChatBox from './components/ChatBox';
+import ConnectionError from './components/ConnectionError';
 import { useNetworkAdapter } from './hooks/useNetworkAdapter';
 import type { Piece, LastMove } from './chess-logic';
 import {
@@ -110,9 +111,16 @@ const ChaosChess = () => {
   // Chat state for network play
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
 
+  // Connection error state
+  const [connectionError, setConnectionError] = useState<string | null>(null);
+
   // Message handler for WebRTC peer messages
   const handlePeerMessage = useCallback((message: any) => {
     switch (message.type) {
+      case 'CONNECTION_ERROR':
+        setConnectionError(message.error);
+        break;
+
       case 'PLAYER_NAME_UPDATE':
         // Guest sends their name to host
         setPlayers(prev => {
@@ -743,6 +751,20 @@ const ChaosChess = () => {
         />
       )}
       {/* --- END OF MODAL --- */}
+
+      {/* --- CONNECTION ERROR MODAL --- */}
+      {connectionError && (
+        <ConnectionError
+          message={connectionError}
+          onDismiss={() => setConnectionError(null)}
+          onRetry={() => {
+            setConnectionError(null);
+            resetConnection();
+            setPlayMode('local');
+            setGameState('setup');
+          }}
+        />
+      )}
 
       <div className="max-w-6xl mx-auto px-2 sm:px-4">
         <div className="text-center mb-6">

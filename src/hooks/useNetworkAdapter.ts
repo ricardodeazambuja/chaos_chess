@@ -79,6 +79,14 @@ export const useNetworkAdapter = ({ onMessage, adapterType = 'webrtc' }: UseNetw
         if (offer) setConnectionOffer(offer);
         if (answer) setConnectionAnswer(answer);
       }
+
+      // Notify parent of connection failures via onMessage
+      if (status === 'failed' && message) {
+        onMessage({
+          type: 'CONNECTION_ERROR',
+          error: message
+        });
+      }
     });
 
     // Subscribe to errors

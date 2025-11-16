@@ -296,31 +296,54 @@ export class WebRTCAdapter implements INetworkAdapter {
   private setupConnectionMonitoring(pc: RTCPeerConnection): void {
     pc.oniceconnectionstatechange = () => {
       switch (pc.iceConnectionState) {
+        case 'checking':
+          this.setStatus('connecting', '🔍 Establishing connection...');
+          break;
         case 'connected':
         case 'completed':
           this.setStatus('connected', '✅ Connected!');
           break;
         case 'disconnected':
-          this.setStatus('disconnected', '⚠️ Connection lost. Please refresh and reconnect.');
+          this.setStatus('disconnected', '⚠️ Connection lost. Trying to reconnect...');
           this._isConnected = false;
           break;
         case 'failed':
-          this.setStatus('failed', '❌ Connection failed. Please try again.');
           this._isConnected = false;
+          this.setStatus('failed',
+            '❌ Connection failed. This usually means:\n\n' +
+            '• Both players are behind restrictive firewalls\n' +
+            '• Try connecting from a different network\n' +
+            '• Try using mobile data instead of WiFi\n' +
+            '• One player may need to use a VPN'
+          );
+          this.handleError('Connection failed - network incompatibility. See troubleshooting tips.');
           break;
       }
     };
 
     pc.onconnectionstatechange = () => {
       switch (pc.connectionState) {
+        case 'connecting':
+          this.setStatus('connecting', '🔄 Connecting...');
+          break;
         case 'connected':
           this._isConnected = true;
           this.setStatus('connected', '✅ Connected!');
           break;
         case 'failed':
+          this._isConnected = false;
+          this.setStatus('failed',
+            '❌ Connection failed. Troubleshooting:\n\n' +
+            '• Check your internet connection\n' +
+            '• Try a different network (mobile data/WiFi)\n' +
+            '• Restart your browser\n' +
+            '• One or both players may be behind a restrictive firewall'
+          );
+          this.handleError('Connection failed - unable to establish P2P connection');
+          break;
         case 'closed':
           this._isConnected = false;
-          this.setStatus('failed', '❌ Connection failed. Please try again.');
+          this.setStatus('closed', 'Connection closed');
           break;
       }
     };
