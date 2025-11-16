@@ -836,7 +836,7 @@ const ChaosChess = () => {
           </div>
         )}
 
-        <div className="flex flex-col lg:flex-row gap-6 items-start justify-center">
+        <div className="flex flex-col lg:flex-row gap-4 sm:gap-6 items-center lg:items-start justify-center w-full">
           <ChessBoard
             board={board}
             selectedSquare={selectedSquare}
@@ -847,7 +847,7 @@ const ChaosChess = () => {
             getPieceSymbol={getPieceSymbol}
           />
 
-          <div className="flex flex-col gap-6">
+          <div className="flex flex-col gap-4 sm:gap-6 w-full lg:w-auto">
             <GameInfoPanel
               players={players}
               gameMode={gameMode}
@@ -869,7 +869,7 @@ const ChaosChess = () => {
 
             {/* Chat for network mode */}
             {playMode === 'network' && (
-              <div className="w-full lg:w-80 h-96">
+              <div className="w-full lg:w-80 h-64 sm:h-96">
                 <ChatBox
                   messages={chatMessages}
                   onSendMessage={sendChatMessage}

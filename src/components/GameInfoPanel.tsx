@@ -49,7 +49,7 @@ const GameInfoPanel: React.FC<GameInfoPanelProps> = ({
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-xl p-6 min-w-[280px]">
+    <div className="bg-white rounded-xl shadow-xl p-4 sm:p-6 w-full lg:min-w-[280px] lg:max-w-md">
       <h3 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
         <RotateCcw size={20} />
         Players {gameMode === 'normie' ? '♖' : gameMode === 'random' ? '🎲' : '🔄'}
