@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Crown, Users, RotateCcw, Clock, DollarSign } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Crown } from 'lucide-react';
 import SetupScreen from './components/SetupScreen';
 import PromotionModal from './components/PromotionModal';
 import ChessBoard from './components/ChessBoard';

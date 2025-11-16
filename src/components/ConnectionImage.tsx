@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Download, Image as ImageIcon } from 'lucide-react';
+import { Download } from 'lucide-react';
 import { hashToImage } from '../network/utils/image-codec';
 
 interface ConnectionImageProps {
