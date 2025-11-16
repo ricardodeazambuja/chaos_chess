@@ -233,14 +233,28 @@ export class WebRTCAdapter implements INetworkAdapter {
   }
 
   disconnect(): void {
-    if (this.peerConnection) {
-      this.peerConnection.close();
-      this.peerConnection = null;
+    // Clean up data channel listeners before closing
+    if (this.dataChannel) {
+      this.dataChannel.onopen = null;
+      this.dataChannel.onmessage = null;
+      this.dataChannel.onerror = null;
+      this.dataChannel.onclose = null;
+      if (this.dataChannel.readyState !== 'closed') {
+        this.dataChannel.close();
+      }
+      this.dataChannel = null;
     }
 
-    if (this.dataChannel) {
-      this.dataChannel.close();
-      this.dataChannel = null;
+    // Clean up peer connection listeners before closing
+    if (this.peerConnection) {
+      this.peerConnection.oniceconnectionstatechange = null;
+      this.peerConnection.onconnectionstatechange = null;
+      this.peerConnection.ondatachannel = null;
+      // Note: icegatheringstatechange is handled via addEventListener and should be GC'd with the object.
+      if (this.peerConnection.signalingState !== 'closed') {
+        this.peerConnection.close();
+      }
+      this.peerConnection = null;
     }
 
     this._role = null;

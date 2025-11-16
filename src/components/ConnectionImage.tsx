@@ -12,6 +12,17 @@ const ConnectionImage: React.FC<ConnectionImageProps> = ({ hash, role, label }) 
   const [imageUrl, setImageUrl] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState(false);
 
+  // Effect to revoke the object URL to prevent memory leaks
+  useEffect(() => {
+    // This cleanup function will be called when the component unmounts
+    // or when the imageUrl state changes.
+    return () => {
+      if (imageUrl) {
+        URL.revokeObjectURL(imageUrl);
+      }
+    };
+  }, [imageUrl]);
+
   useEffect(() => {
     if (hash) {
       generateImage();
