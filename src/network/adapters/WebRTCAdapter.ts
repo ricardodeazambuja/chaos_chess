@@ -101,13 +101,20 @@ export class WebRTCAdapter implements INetworkAdapter {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      // Wait for ICE gathering to complete with a timeout
+      // Wait for ICE gathering to complete with a generous timeout
+      // In some network conditions, ICE gathering can take longer
       await Promise.race([
         this.waitForIceGathering(pc),
         new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('ICE gathering timed out after 15 seconds')), 15000)
+          setTimeout(() => reject(new Error('ICE gathering timed out after 30 seconds. This may indicate network connectivity issues.')), 30000)
         ),
-      ]);
+      ]).catch((error) => {
+        // If ICE gathering times out, we can still proceed with whatever candidates we have
+        // This is acceptable for our manual signaling approach
+        if (import.meta.env.DEV) {
+          console.warn('[WebRTCAdapter] ICE gathering timeout, proceeding with available candidates:', error);
+        }
+      });
 
       // Save to localStorage for later restoration
       if (pc.localDescription) {
@@ -166,8 +173,17 @@ export class WebRTCAdapter implements INetworkAdapter {
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
 
-      // Wait for ICE gathering
-      await this.waitForIceGathering(pc);
+      // Wait for ICE gathering with timeout
+      await Promise.race([
+        this.waitForIceGathering(pc),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('ICE gathering timed out after 30 seconds')), 30000)
+        ),
+      ]).catch((error) => {
+        if (import.meta.env.DEV) {
+          console.warn('[WebRTCAdapter] ICE gathering timeout (guest), proceeding with available candidates:', error);
+        }
+      });
 
       // Generate minified answer code (compressed SDP)
       const answerCode = minifySDP(pc.localDescription);

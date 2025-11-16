@@ -5,13 +5,15 @@ import { imageToHash } from '../network/utils/image-codec';
 interface ImageUploaderProps {
   onHashExtracted: (hash: string) => void;
   label: string;
+  autoProcess?: boolean; // Auto-trigger connection after successful decode
 }
 
-const ImageUploader: React.FC<ImageUploaderProps> = ({ onHashExtracted, label }) => {
+const ImageUploader: React.FC<ImageUploaderProps> = ({ onHashExtracted, label, autoProcess = false }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [isDecoding, setIsDecoding] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string>('');
   const [error, setError] = useState<string>('');
+  const [success, setSuccess] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFile = async (file: File) => {
@@ -21,6 +23,7 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onHashExtracted, label })
     }
 
     setError('');
+    setSuccess(false);
     setIsDecoding(true);
 
     // Show preview
@@ -30,10 +33,19 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onHashExtracted, label })
     try {
       const hash = await imageToHash(file);
       onHashExtracted(hash);
+      setSuccess(true);
       setError('');
+
+      // Auto-clear preview after successful decode if autoProcess is enabled
+      if (autoProcess) {
+        setTimeout(() => {
+          setPreviewUrl('');
+        }, 1000);
+      }
     } catch (err) {
       setError('Failed to decode image. Make sure it\'s a valid connection image.');
       console.error('Decode error:', err);
+      setSuccess(false);
     } finally {
       setIsDecoding(false);
     }
@@ -65,22 +77,10 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onHashExtracted, label })
     }
   };
 
-  const handlePaste = (e: React.ClipboardEvent) => {
-    const items = e.clipboardData.items;
-    for (let i = 0; i < items.length; i++) {
-      if (items[i].type.startsWith('image/')) {
-        const file = items[i].getAsFile();
-        if (file) {
-          handleFile(file);
-        }
-        break;
-      }
-    }
-  };
-
   const clearPreview = () => {
     setPreviewUrl('');
     setError('');
+    setSuccess(false);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -106,14 +106,17 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onHashExtracted, label })
               <div className="text-white font-bold">Decoding...</div>
             </div>
           )}
+          {success && !isDecoding && (
+            <div className="absolute inset-0 bg-green-500 bg-opacity-90 flex items-center justify-center rounded-lg">
+              <div className="text-white font-bold text-lg">✅ Decoded!</div>
+            </div>
+          )}
         </div>
       ) : (
         <div
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
-          onPaste={handlePaste}
-          tabIndex={0}
           className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors
             ${isDragging ? 'border-blue-500 bg-blue-50' : 'border-slate-300 bg-slate-50 hover:border-blue-400'}`}
           onClick={() => fileInputRef.current?.click()}
@@ -123,7 +126,7 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onHashExtracted, label })
             Upload Connection Image
           </p>
           <p className="text-xs text-slate-500">
-            Click, drag & drop, or paste (Ctrl+V)
+            Click to browse or drag & drop
           </p>
           <input
             ref={fileInputRef}
@@ -141,9 +144,16 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({ onHashExtracted, label })
         </div>
       )}
 
-      <p className="text-xs text-slate-600 text-center">
-        Upload the image you received to auto-fill the code
-      </p>
+      {!autoProcess && (
+        <p className="text-xs text-slate-600 text-center">
+          Upload the image you received to auto-fill the code
+        </p>
+      )}
+      {autoProcess && success && (
+        <p className="text-xs text-green-600 text-center font-semibold">
+          ✅ Processing automatically...
+        </p>
+      )}
     </div>
   );
 };

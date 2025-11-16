@@ -101,8 +101,12 @@ const SetupScreen = ({
 
               {/* Image Upload Option */}
               <ImageUploader
-                onHashExtracted={(hash) => setHostOfferInput(hash)}
-                label="📸 Option 1: Upload Host's Image"
+                onHashExtracted={(hash) => {
+                  setHostOfferInput(hash);
+                  createGuestConnection(hash);
+                }}
+                label="📸 Option 1: Upload Host's Image (Auto-joins)"
+                autoProcess={true}
               />
 
               {/* Text Option */}
@@ -115,15 +119,14 @@ const SetupScreen = ({
                   onChange={(e) => setHostOfferInput(e.target.value)}
                   className="w-full px-3 py-2 border-2 border-slate-300 rounded-lg text-sm"
                 />
+                <button
+                  onClick={() => createGuestConnection(hostOfferInput)}
+                  disabled={!hostOfferInput}
+                  className="w-full mt-2 px-4 py-2 bg-blue-500 text-white font-bold rounded-lg hover:bg-blue-600 disabled:opacity-50"
+                >
+                  🔌 Join Game
+                </button>
               </div>
-
-              <button
-                onClick={() => createGuestConnection(hostOfferInput)}
-                disabled={!hostOfferInput}
-                className="w-full px-4 py-2 bg-blue-500 text-white font-bold rounded-lg hover:bg-blue-600 disabled:opacity-50"
-              >
-                🔌 Join Game
-              </button>
             </div>
           </div>
         )}
@@ -165,8 +168,12 @@ const SetupScreen = ({
 
               {/* Image Upload Option */}
               <ImageUploader
-                onHashExtracted={(hash) => setGuestAnswerInput(hash)}
-                label="📸 Option 1: Upload Guest's Image"
+                onHashExtracted={(hash) => {
+                  setGuestAnswerInput(hash);
+                  acceptGuestAnswer(hash);
+                }}
+                label="📸 Option 1: Upload Guest's Image (Auto-accepts)"
+                autoProcess={true}
               />
 
               {/* Text Option */}
@@ -179,15 +186,14 @@ const SetupScreen = ({
                   onChange={(e) => setGuestAnswerInput(e.target.value)}
                   className="w-full px-3 py-2 border-2 border-slate-300 rounded-lg text-sm mb-2"
                 />
+                <button
+                  onClick={() => acceptGuestAnswer(guestAnswerInput)}
+                  disabled={!guestAnswerInput}
+                  className="w-full px-4 py-2 bg-purple-500 text-white font-bold rounded-lg hover:bg-purple-600 disabled:opacity-50"
+                >
+                  🤝 Accept Answer
+                </button>
               </div>
-
-              <button
-                onClick={() => acceptGuestAnswer(guestAnswerInput)}
-                disabled={!guestAnswerInput}
-                className="w-full px-4 py-2 bg-purple-500 text-white font-bold rounded-lg hover:bg-purple-600 disabled:opacity-50"
-              >
-                🤝 Accept Answer
-              </button>
             </div>
           </div>
         )}
@@ -202,34 +208,43 @@ const SetupScreen = ({
         
         {/* Guest Connection Display - Not Connected */}
         {playMode === 'network' && networkRole === 'guest' && !isConnected && (
-          <div className="mb-6 p-4 bg-blue-50 rounded-lg border-2 border-blue-300 space-y-4">
-            <h3 className="font-bold text-slate-800">🔗 Send Answer to Host</h3>
-
-            {/* Image Option */}
-            <ConnectionImage
-              hash={connectionAnswer}
-              role="answer"
-              label="📸 Option 1: Share as Image (Recommended)"
-            />
-
-            {/* Text Option */}
-            <div className="pt-4 border-t border-blue-200">
-              <h4 className="font-bold text-slate-800 text-sm mb-2">📝 Option 2: Share as Text</h4>
-              <div className="bg-white p-3 rounded-lg border-2 border-slate-300 mb-2 break-all text-xs font-mono max-h-24 overflow-y-auto">
-                {connectionAnswer}
+          <div className="mb-6 space-y-4">
+            {/* Big prominent section */}
+            <div className="p-6 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg border-4 border-blue-700 shadow-lg">
+              <div className="text-center mb-4">
+                <div className="text-3xl mb-2">📤</div>
+                <h3 className="font-bold text-white text-xl mb-2">Step 2: Send THIS Back to Host!</h3>
+                <p className="text-blue-100 text-sm">Don't send the image you received - send THIS new image below</p>
               </div>
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(connectionAnswer);
-                  alert('Code copied! Send it back to the host.');
-                }}
-                className="w-full px-3 py-2 bg-blue-500 text-white font-bold rounded-lg hover:bg-blue-600 text-sm"
-              >
-                📋 Copy Text Code
-              </button>
+
+              {/* Image Option */}
+              <div className="bg-white rounded-lg p-4">
+                <ConnectionImage
+                  hash={connectionAnswer}
+                  role="answer"
+                  label="📸 Download & Share This Image"
+                />
+              </div>
+
+              {/* Text Option */}
+              <div className="mt-4 pt-4 border-t border-blue-400">
+                <h4 className="font-bold text-white text-sm mb-2">📝 Or Copy This Text Code</h4>
+                <div className="bg-white p-3 rounded-lg border-2 border-blue-300 mb-2 break-all text-xs font-mono max-h-24 overflow-y-auto">
+                  {connectionAnswer}
+                </div>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(connectionAnswer);
+                    alert('Code copied! Send it back to the host.');
+                  }}
+                  className="w-full px-3 py-2 bg-white text-blue-600 font-bold rounded-lg hover:bg-blue-50 text-sm"
+                >
+                  📋 Copy Text Code
+                </button>
+              </div>
             </div>
 
-            <p className="text-sm text-slate-600 text-center pt-2">⏳ Waiting for host to accept...</p>
+            <p className="text-sm text-slate-600 text-center">⏳ Waiting for host to accept your answer...</p>
           </div>
         )}
 
