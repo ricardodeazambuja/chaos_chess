@@ -201,9 +201,10 @@ export class WebRTCAdapter implements INetworkAdapter {
       this._role = 'guest';
       this.setStatus('connecting', 'Waiting for host to accept answer...');
     } catch (error) {
-      const userFriendlyError = 'The host code is invalid. Please make sure you copied the entire code correctly and try again.';
+      const userFriendlyError = 'The host code is invalid. Please make sure you copied the entire code block, including the "-----BEGIN..." and "-----END..." lines, and try again.';
       this.setStatus('failed', userFriendlyError);
       this.handleError(userFriendlyError);
+      throw new Error(userFriendlyError);
     }
   }
 
@@ -223,10 +224,11 @@ export class WebRTCAdapter implements INetworkAdapter {
       this._role = 'host'; // Confirm role as host
       this.setStatus('connected', '✅ Connected!'); // Set status to connected
     } catch (error) {
-      const userFriendlyError = "The guest's answer code is invalid. Please ask your friend to generate a new code and send it again.";
+      const userFriendlyError = "The guest's answer code is invalid. Please make sure your friend copied the entire code block, including the \"-----BEGIN...\" and \"-----END...\" lines, and sent it to you.";
       this.setStatus('failed', userFriendlyError);
       this.handleError(userFriendlyError);
       this.clearConnectionState();
+      throw new Error(userFriendlyError);
     }
   }
 

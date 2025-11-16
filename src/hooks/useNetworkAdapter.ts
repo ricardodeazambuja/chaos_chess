@@ -1,16 +1,7 @@
-/**
- * useNetworkAdapter Hook
- *
- * React hook that wraps a network adapter (INetworkAdapter) and provides
- * a React-friendly interface with state management.
- *
- * This hook bridges the gap between the adapter pattern and React components,
- * managing adapter lifecycle and exposing state as React hooks.
- */
-
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { INetworkAdapter } from '../network/INetworkAdapter';
 import { WebRTCAdapter } from '../network/adapters/WebRTCAdapter';
+import { wrapCode, unwrapCode } from '../network/utils/code-wrapper';
 
 interface UseNetworkAdapterProps {
   onMessage: (message: any) => void;
@@ -46,6 +37,7 @@ export const useNetworkAdapter = ({ onMessage, adapterType = 'webrtc' }: UseNetw
   // ============================================================================
 
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [countdown, setCountdown] = useState<number | null>(null);
   const [isConnected, setIsConnected] = useState<boolean>(adapter.isConnected);
   const [networkRole, setNetworkRole] = useState<'host' | 'guest' | null>(adapter.role);
   const [connectionMessage, setConnectionMessage] = useState<string | null>(adapter.statusMessage);
@@ -57,6 +49,29 @@ export const useNetworkAdapter = ({ onMessage, adapterType = 'webrtc' }: UseNetw
   // Input state for manual code entry
   const [hostOfferInput, setHostOfferInput] = useState<string>('');
   const [guestAnswerInput, setGuestAnswerInput] = useState<string>('');
+  
+  // Ref for the countdown interval
+  const countdownRef = useRef<NodeJS.Timeout | null>(null);
+
+  // ============================================================================
+  // Countdown Timer Logic
+  // ============================================================================
+
+  const stopCountdown = useCallback(() => {
+    if (countdownRef.current) {
+      clearInterval(countdownRef.current);
+      countdownRef.current = null;
+    }
+    setCountdown(null);
+  }, []);
+
+  const startCountdown = useCallback((duration: number) => {
+    stopCountdown(); // Ensure no multiple intervals are running
+    setCountdown(duration);
+    countdownRef.current = setInterval(() => {
+      setCountdown(prev => (prev !== null && prev > 0 ? prev - 1 : 0));
+    }, 1000);
+  }, [stopCountdown]);
 
   // ============================================================================
   // Subscribe to Adapter Events
@@ -77,8 +92,8 @@ export const useNetworkAdapter = ({ onMessage, adapterType = 'webrtc' }: UseNetw
       // Update connection data if available
       if (adapter.getConnectionData) {
         const { offer, answer } = adapter.getConnectionData();
-        if (offer) setConnectionOffer(offer);
-        if (answer) setConnectionAnswer(answer);
+        if (offer) setConnectionOffer(wrapCode(offer, 'OFFER'));
+        if (answer) setConnectionAnswer(wrapCode(answer, 'ANSWER'));
       }
 
       // Notify parent of connection failures via onMessage
@@ -98,8 +113,9 @@ export const useNetworkAdapter = ({ onMessage, adapterType = 'webrtc' }: UseNetw
     // Cleanup on unmount
     return () => {
       adapter.disconnect();
+      stopCountdown(); // Ensure cleanup on unmount
     };
-  }, [adapter, onMessage]);
+  }, [adapter, onMessage, stopCountdown]);
 
   // ============================================================================
   // Adapter Methods (wrapped for React)
@@ -107,40 +123,98 @@ export const useNetworkAdapter = ({ onMessage, adapterType = 'webrtc' }: UseNetw
 
   const createHostConnection = useCallback(async () => {
     setIsLoading(true);
+    startCountdown(15);
     try {
-      const connectionInfo = await adapter.createConnection();
-      setConnectionOffer(connectionInfo.code);
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Connection setup timed out after 15 seconds. Please check your network and try again.')), 15000)
+      );
+
+      const connectionInfo = await Promise.race([
+        adapter.createConnection(),
+        timeoutPromise
+      ]);
+
+      setConnectionOffer(wrapCode(connectionInfo.code, 'OFFER'));
       setNetworkRole('host');
+    } catch (error) {
+      onMessage({
+        type: 'CONNECTION_ERROR',
+        error: error instanceof Error ? error.message : 'An unknown error occurred.',
+      });
+      adapter.disconnect(); // Clean up failed attempt
     } finally {
       setIsLoading(false);
+      stopCountdown();
     }
-  }, [adapter]);
+  }, [adapter, onMessage, startCountdown, stopCountdown]);
 
   const createGuestConnection = useCallback(async (offerCode: string) => {
     setIsLoading(true);
+    startCountdown(15);
     try {
-      await adapter.joinConnection(offerCode);
+      const { code: rawOffer, type } = unwrapCode(offerCode);
+      if (type !== 'OFFER') {
+        throw new Error('Invalid code type. An Offer code from the host is expected.');
+      }
+
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Joining game timed out after 15 seconds. Please check the code and your network.')), 15000)
+      );
+      
+      await Promise.race([
+        adapter.joinConnection(rawOffer),
+        timeoutPromise
+      ]);
+
       // Get answer code from adapter
       if (adapter.getConnectionData) {
         const { answer } = adapter.getConnectionData();
-        if (answer) setConnectionAnswer(answer);
+        if (answer) setConnectionAnswer(wrapCode(answer, 'ANSWER'));
       }
       setNetworkRole('guest');
+    } catch (error) {
+      onMessage({
+        type: 'CONNECTION_ERROR',
+        error: error instanceof Error ? error.message : 'An unknown error occurred.',
+      });
+      adapter.disconnect(); // Clean up failed attempt
     } finally {
       setIsLoading(false);
+      stopCountdown();
     }
-  }, [adapter]);
+  }, [adapter, onMessage, startCountdown, stopCountdown]);
 
   const acceptGuestAnswer = useCallback(async (answerCode: string) => {
     if (adapter.acceptAnswer) {
       setIsLoading(true);
+      startCountdown(15);
       try {
-        await adapter.acceptAnswer(answerCode);
+        const { code: rawAnswer, type } = unwrapCode(answerCode);
+        if (type !== 'ANSWER') {
+          throw new Error('Invalid code type. An Answer code from the guest is expected.');
+        }
+
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Accepting answer timed out after 15 seconds. Please check the code and your network.')), 15000)
+        );
+
+        await Promise.race([
+          adapter.acceptAnswer(rawAnswer),
+          timeoutPromise
+        ]);
+
+      } catch (error) {
+        onMessage({
+          type: 'CONNECTION_ERROR',
+          error: error instanceof Error ? error.message : 'An unknown error occurred.',
+        });
+        adapter.disconnect(); // Clean up failed attempt
       } finally {
         setIsLoading(false);
+        stopCountdown();
       }
     }
-  }, [adapter]);
+  }, [adapter, onMessage, startCountdown, stopCountdown]);
 
   const broadcastMove = useCallback((message: any) => {
     adapter.broadcast(message);
@@ -156,6 +230,12 @@ export const useNetworkAdapter = ({ onMessage, adapterType = 'webrtc' }: UseNetw
     setNetworkRole(null);
     setConnectionMessage(null);
   }, [adapter]);
+
+  const clearInputsAndError = useCallback(() => {
+    setHostOfferInput('');
+    setGuestAnswerInput('');
+    setConnectionMessage(null); // Clear any status messages, including errors
+  }, []);
 
   // ============================================================================
   // Return Interface (same as old useWebRTC)
@@ -174,6 +254,7 @@ export const useNetworkAdapter = ({ onMessage, adapterType = 'webrtc' }: UseNetw
 
     // Connection state
     isLoading,
+    countdown,
     isConnected,
     setIsConnected, // Kept for compatibility, but adapter manages this
     connectionMessage,
@@ -189,6 +270,7 @@ export const useNetworkAdapter = ({ onMessage, adapterType = 'webrtc' }: UseNetw
     createGuestConnection,
     broadcastMove,
     resetConnection,
+    clearInputsAndError,
 
     // Future: Expose adapter directly for advanced features
     adapter,

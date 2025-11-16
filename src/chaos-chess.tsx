@@ -212,6 +212,7 @@ const ChaosChess = () => {
     guestAnswerInput,
     setGuestAnswerInput,
     isLoading,
+    countdown,
     isConnected,
     setIsConnected,
     connectionMessage,
@@ -222,7 +223,8 @@ const ChaosChess = () => {
     acceptGuestAnswer,
     createGuestConnection,
     broadcastMove: webRTCBroadcast,
-    resetConnection
+    resetConnection,
+    clearInputsAndError
   } = useNetworkAdapter({ onMessage: handlePeerMessage });
 
   const startGame = () => {
@@ -701,41 +703,59 @@ const ChaosChess = () => {
 
   if (gameState === 'setup') {
     return (
-      <SetupScreen
-        players={players}
-        setPlayers={setPlayers}
-        gameMode={gameMode}
-        setGameMode={setGameMode}
-        isTimedGame={isTimedGame}
-        setIsTimedGame={setIsTimedGame}
-        timeSetting={timeSetting}
-        setTimeSetting={setTimeSetting}
-        isPointsGame={isPointsGame}
-        setIsPointsGame={setIsPointsGame}
-        targetScore={targetScore}
-        setTargetScore={setTargetScore}
-        playMode={playMode}
-        setPlayMode={setPlayMode}
-        isLoading={isLoading}
-        networkRole={networkRole}
-        setNetworkRole={setNetworkRole}
-        createHostConnection={createHostConnection}
-        createGuestConnection={createGuestConnection}
-        hostOfferInput={hostOfferInput}
-        setHostOfferInput={setHostOfferInput}
-        guestAnswerInput={guestAnswerInput}
-        setGuestAnswerInput={setGuestAnswerInput}
-        connectionOffer={connectionOffer}
-        isConnected={isConnected}
-        setIsConnected={setIsConnected}
-        connectionMessage={connectionMessage}
-        connectionAnswer={connectionAnswer}
-        acceptGuestAnswer={acceptGuestAnswer}
-        startGame={startGame}
-        addPlayer={addPlayer}
-        removePlayer={removePlayer}
-        updatePlayerName={updatePlayerName}
-      />
+      <>
+        <SetupScreen
+          players={players}
+          setPlayers={setPlayers}
+          gameMode={gameMode}
+          setGameMode={setGameMode}
+          isTimedGame={isTimedGame}
+          setIsTimedGame={setIsTimedGame}
+          timeSetting={timeSetting}
+          setTimeSetting={setTimeSetting}
+          isPointsGame={isPointsGame}
+          setIsPointsGame={setIsPointsGame}
+          targetScore={targetScore}
+          setTargetScore={setTargetScore}
+          playMode={playMode}
+          setPlayMode={setPlayMode}
+          isLoading={isLoading}
+          countdown={countdown}
+          networkRole={networkRole}
+          setNetworkRole={setNetworkRole}
+          createHostConnection={createHostConnection}
+          createGuestConnection={createGuestConnection}
+          hostOfferInput={hostOfferInput}
+          setHostOfferInput={setHostOfferInput}
+          guestAnswerInput={guestAnswerInput}
+          setGuestAnswerInput={setGuestAnswerInput}
+          connectionOffer={connectionOffer}
+          isConnected={isConnected}
+          setIsConnected={setIsConnected}
+          connectionMessage={connectionMessage}
+          connectionAnswer={connectionAnswer}
+          acceptGuestAnswer={acceptGuestAnswer}
+          startGame={startGame}
+          addPlayer={addPlayer}
+          removePlayer={removePlayer}
+          updatePlayerName={updatePlayerName}
+        />
+        {connectionError && (
+          <ConnectionError
+            message={connectionError}
+            onDismiss={() => {
+              setConnectionError(null);
+              clearInputsAndError(); // Use granular reset
+            }}
+            onRetry={() => { // This is the "Back to Menu" button
+              setConnectionError(null);
+              resetConnection();
+              setPlayMode('local');
+              setGameState('setup');
+            }}
+          />
+        )}
+      </>
     );
   }
 
@@ -758,7 +778,10 @@ const ChaosChess = () => {
       {connectionError && (
         <ConnectionError
           message={connectionError}
-          onDismiss={() => setConnectionError(null)}
+          onDismiss={() => {
+            setConnectionError(null);
+            clearInputsAndError(); // Use granular reset
+          }}
           onRetry={() => {
             setConnectionError(null);
             resetConnection();
