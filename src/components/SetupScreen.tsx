@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Crown, Users, RotateCcw, Clock, DollarSign, Copy, ClipboardPaste, Loader } from 'lucide-react';
+import { Crown, Users, Clock, DollarSign, Copy, ClipboardPaste, Loader } from 'lucide-react';
 
 const SetupScreen = ({
   players,
@@ -28,7 +28,6 @@ const SetupScreen = ({
   setGuestAnswerInput,
   connectionOffer,
   isConnected,
-  connectionMessage,
   connectionAnswer,
   acceptGuestAnswer,
   startGame,

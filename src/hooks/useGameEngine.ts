@@ -1,10 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import type { Piece, LastMove } from '../chess-logic';
 import {
   BOARD_SIZE,
   BOARD_MAX_INDEX,
-  BLACK_PAWN_ROW,
-  WHITE_PAWN_ROW,
   BLACK_BACK_ROW,
   WHITE_BACK_ROW,
   PIECE_VALUES,
@@ -108,8 +106,8 @@ export const useGameEngine = ({ onGameStart, onMoveMade, onGameOver }: GameEngin
   // Captured Pieces state
   const [capturedPieces, setCapturedPieces] = useState<CapturedPieces>({ white: [], black: [] });
 
-  // Single move highlight state
-  const [singleMove, setSingleMove] = useState<{ from: {row: number, col: number}, to: {row: number, col: number} } | null>(null);
+  // Single move highlight - derived via useMemo instead of state to avoid setState in effect
+  // (removed useState)
 
   // Derived state for check
   const [inCheck, setInCheck] = useState<boolean>(false);
@@ -178,6 +176,7 @@ export const useGameEngine = ({ onGameStart, onMoveMade, onGameOver }: GameEngin
     if (winnerInfo) {
       setWinner(winnerInfo);
       setGameState('finished');
+      setInCheck(false);
       onGameOver?.({ winner: winnerInfo });
     } else {
       setCurrentColor(nextChessColor);
@@ -185,6 +184,8 @@ export const useGameEngine = ({ onGameStart, onMoveMade, onGameOver }: GameEngin
       if (gameMode === 'random') {
         setRandomPlayerColor(nextRandomColor);
       }
+      // Update check status for the next player
+      setInCheck(isInCheck(nextChessColor, boardAfterMove, lastMoveAfterMove));
     }
 
     onMoveMade?.({
@@ -240,14 +241,22 @@ export const useGameEngine = ({ onGameStart, onMoveMade, onGameOver }: GameEngin
         setBoard(newBoard);
 
         const actualCaptured = capturedPiece || enPassantCapture;
+        let updatedPlayerScores = playerScores;
         if (actualCaptured) {
           setCapturedPieces(prev => ({ ...prev, [movingPiece.color]: [...prev[movingPiece.color], actualCaptured.type] }));
           if (isPointsGame) {
-            setPlayerScores(prev => {
-              const newScores = [...prev];
-              newScores[currentPlayerIndex] = (newScores[currentPlayerIndex] || 0) + PIECE_VALUES[actualCaptured.type];
-              return newScores;
-            });
+            updatedPlayerScores = [...playerScores];
+            updatedPlayerScores[currentPlayerIndex] = (updatedPlayerScores[currentPlayerIndex] || 0) + PIECE_VALUES[actualCaptured.type];
+            setPlayerScores(updatedPlayerScores);
+
+            // Check for target score win immediately after updating scores
+            if (updatedPlayerScores[currentPlayerIndex] >= targetScore) {
+              const winnerInfo = { name: players[currentPlayerIndex].name, reason: 'Target Score' };
+              setWinner(winnerInfo);
+              setGameState('finished');
+              onGameOver?.({ winner: winnerInfo });
+              return;
+            }
           }
         }
 
@@ -259,10 +268,14 @@ export const useGameEngine = ({ onGameStart, onMoveMade, onGameOver }: GameEngin
 
         setSelectedSquare(null);
         setValidMoves([]);
-        
+
         const newPlayerMoveCount = [...playerMoveCount];
         newPlayerMoveCount[currentPlayerIndex] = (newPlayerMoveCount[currentPlayerIndex] || 0) + 1;
         setPlayerMoveCount(newPlayerMoveCount);
+
+        // Calculate check status for display
+        const checkStatus = isInCheck(currentPlayerColor, newBoard, newLastMove);
+        setInCheck(checkStatus);
 
         if (capturedPiece?.type === 'king') {
           const winnerInfo = { name: players[currentPlayerIndex].name, reason: 'King Capture' };
@@ -287,7 +300,7 @@ export const useGameEngine = ({ onGameStart, onMoveMade, onGameOver }: GameEngin
       setSelectedSquare({ row, col });
       setValidMoves(getValidMovesForPiece(row, col));
     }
-  }, [gameState, winner, board, selectedSquare, validMoves, currentPlayerIndex, playerMoveCount, getPlayerColor, isPointsGame, moveHistory, players, advanceTurn, onGameOver, getValidMovesForPiece]);
+  }, [gameState, winner, board, selectedSquare, validMoves, currentPlayerIndex, playerMoveCount, getPlayerColor, isPointsGame, moveHistory, players, advanceTurn, onGameOver, getValidMovesForPiece, targetScore, playerScores]);
 
   const promotePawn = useCallback((chosenPiece: Piece['type']) => {
     if (gameState !== 'promoting' || !promotionSquare) return;
@@ -324,6 +337,7 @@ export const useGameEngine = ({ onGameStart, onMoveMade, onGameOver }: GameEngin
     setCapturedPieces({ white: [], black: [] });
     setPlayerMoveCount(players.map(() => 0));
     setRandomPlayerColor(initialRandomColor);
+    setInCheck(false);
 
     const initialPlayerTimes = isTimedGame ? players.map(() => timeSetting * 60) : [];
     setPlayerTimes(initialPlayerTimes);
@@ -387,26 +401,17 @@ export const useGameEngine = ({ onGameStart, onMoveMade, onGameOver }: GameEngin
     return () => clearInterval(timer);
   }, [gameState, isTimedGame, winner, currentPlayerIndex, players, onGameOver]);
 
-  // Effect for target score win
-  useEffect(() => {
-    if (!isPointsGame || gameState !== 'playing' || winner) return;
-    const winnerIndex = playerScores.findIndex(score => score >= targetScore);
-    if (winnerIndex !== -1) {
-      const winnerInfo = { name: players[winnerIndex].name, reason: 'Target Score' };
-      setWinner(winnerInfo);
-      setGameState('finished');
-      onGameOver?.({ winner: winnerInfo });
+  // Target score win is now checked immediately in makeMove() when scores update
+
+  // Single move highlight - derive the value using useMemo instead of effect + state
+  const singleMove = useMemo(() => {
+    if (gameState !== 'playing' || winner || board.length === 0) {
+      return null;
     }
-  }, [playerScores, isPointsGame, targetScore, players, gameState, winner, onGameOver]);
-  
-  // Effect for single move highlight
-  useEffect(() => {
-    if (gameState !== 'playing' || winner) {
-      setSingleMove(null);
-      return;
-    }
+
     const allMoves: { from: { row: number; col: number }; to: { row: number; col: number } }[] = [];
     const currentPlayerColor = getPlayerColor(currentPlayerIndex, playerMoveCount[currentPlayerIndex] || 0);
+
     for (let r = 0; r < BOARD_SIZE; r++) {
       for (let c = 0; c < BOARD_SIZE; c++) {
         const piece = board[r][c];
@@ -420,18 +425,12 @@ export const useGameEngine = ({ onGameStart, onMoveMade, onGameOver }: GameEngin
         }
       }
     }
-    setSingleMove(allMoves.length === 1 ? allMoves[0] : null);
+
+    return allMoves.length === 1 ? allMoves[0] : null;
   }, [currentPlayerIndex, board, gameState, winner, getPlayerColor, getValidMovesForPiece, playerMoveCount]);
 
-  // Effect to calculate if current player is in check
-  useEffect(() => {
-    if (gameState === 'playing' && board.length > 0) {
-      const currentPlayerColor = getPlayerColor(currentPlayerIndex, playerMoveCount[currentPlayerIndex] || 0);
-      setInCheck(isInCheck(currentPlayerColor, board, lastMove));
-    } else {
-      setInCheck(false);
-    }
-  }, [board, lastMove, currentPlayerIndex, playerMoveCount, getPlayerColor, gameState]);
+  // Check status is now calculated in makeMove() and advanceTurn() when board changes
+  // This avoids cascading renders from setState in effects
 
   // Network message handlers
   const receiveNetworkGameStart = useCallback((data: GameStartData) => {
@@ -452,6 +451,7 @@ export const useGameEngine = ({ onGameStart, onMoveMade, onGameOver }: GameEngin
       setPlayerScores(data.players.map(() => 0));
       setTargetScore(data.targetScore);
     }
+    setInCheck(false);
     setGameState('playing');
   }, []);
 
@@ -467,8 +467,15 @@ export const useGameEngine = ({ onGameStart, onMoveMade, onGameOver }: GameEngin
     if (data.playerScores) setPlayerScores(data.playerScores);
     if (data.winner) {
       setWinner(data.winner);
+      setInCheck(false);
       setGameState('finished');
     } else {
+      // Calculate check status for current player after receiving network move
+      if (data.board.length > 0 && data.lastMove) {
+        setInCheck(isInCheck(data.currentColor, data.board, data.lastMove));
+      } else {
+        setInCheck(false);
+      }
       setGameState('playing');
     }
   }, []);

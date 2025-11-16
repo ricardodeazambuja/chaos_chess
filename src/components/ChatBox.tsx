@@ -15,7 +15,7 @@ interface ChatBoxProps {
   disabled?: boolean;
 }
 
-const ChatBox: React.FC<ChatBoxProps> = ({ messages, onSendMessage, playerName, disabled = false }) => {
+const ChatBox: React.FC<ChatBoxProps> = ({ messages, onSendMessage, disabled = false }) => {
   const [inputValue, setInputValue] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 

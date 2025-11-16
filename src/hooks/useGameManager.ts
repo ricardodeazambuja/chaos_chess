@@ -1,13 +1,33 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useGameEngine } from './useGameEngine';
 import type { GameStartData, MoveMadeData } from './useGameEngine';
 import { useNetworkAdapter } from './useNetworkAdapter';
+import type { Piece } from '../chess-logic';
 
 interface ChatMessage {
   playerName: string;
   message: string;
   timestamp: number;
   isOwn?: boolean;
+}
+
+interface GameActions {
+  setGameState: (state: 'setup' | 'playing' | 'promoting' | 'finished') => void;
+  setPlayers: (players: { name: string }[]) => void;
+  setGameMode: (mode: 'rotating' | 'random' | 'normie') => void;
+  setIsTimedGame: (isTimed: boolean) => void;
+  setTimeSetting: (time: number) => void;
+  setIsPointsGame: (isPoints: boolean) => void;
+  setTargetScore: (score: number) => void;
+  addPlayer: () => void;
+  removePlayer: (index: number) => void;
+  updatePlayerName: (index: number, name: string) => void;
+  startGame: () => void;
+  makeMove: (row: number, col: number) => void;
+  promotePawn: (pieceType: Piece['type']) => void;
+  getPlayerColor: (index: number, moveCount: number) => 'white' | 'black';
+  receiveNetworkGameStart: (data: GameStartData) => void;
+  receiveNetworkMove: (data: MoveMadeData) => void;
 }
 
 interface ConnectionErrorMessage {
@@ -51,7 +71,8 @@ export const useGameManager = () => {
   const [playMode, setPlayMode] = useState<'local' | 'network'>('local');
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [connectionError, setConnectionError] = useState<string | null>(null);
-  const gameActionsRef = useRef<any>(null);
+  const [isMidGameDisconnect, setIsMidGameDisconnect] = useState<boolean>(false);
+  const gameActionsRef = useRef<GameActions | null>(null);
 
   const handlePeerMessage = useCallback((message: NetworkMessage) => {
     const actions = gameActionsRef.current;
@@ -59,6 +80,10 @@ export const useGameManager = () => {
 
     switch (message.type) {
       case 'CONNECTION_ERROR':
+        // Check if this is a mid-game disconnection
+        if (message.wasMidGame) {
+          setIsMidGameDisconnect(true);
+        }
         setConnectionError(message.error);
         break;
       case 'PLAYER_NAME_UPDATE':
@@ -102,7 +127,40 @@ export const useGameManager = () => {
     },
   });
 
-  gameActionsRef.current = gameActions;
+  // Update ref in effect to avoid accessing ref during render
+  useEffect(() => {
+    gameActionsRef.current = gameActions;
+  }, [gameActions]);
+
+  // Monitor for mid-game disconnection
+  useEffect(() => {
+    // Detect when connection drops during active gameplay
+    if (playMode === 'network' && game.gameState === 'playing') {
+      if (!network.isConnected && !isMidGameDisconnect) {
+        setIsMidGameDisconnect(true);
+        setConnectionError('Your opponent has disconnected or lost connection.');
+      }
+    }
+
+    // Clear disconnect flag when game returns to setup
+    if (game.gameState === 'setup') {
+      setIsMidGameDisconnect(false);
+      setConnectionError(null);
+    }
+
+    // Handle reconnection during "waiting" period
+    if (isMidGameDisconnect && network.isConnected && game.gameState === 'playing') {
+      setIsMidGameDisconnect(false);
+      setConnectionError(null);
+      // Notify via chat that opponent reconnected
+      setChatMessages(prev => [...prev, {
+        playerName: 'System',
+        message: '✅ Opponent reconnected!',
+        timestamp: Date.now(),
+        isOwn: false
+      }]);
+    }
+  }, [playMode, game.gameState, network.isConnected, isMidGameDisconnect]);
 
   const sendChatMessage = (message: string) => {
     if (playMode === 'network') {
@@ -137,6 +195,9 @@ export const useGameManager = () => {
   };
 
   const handleSquareClick = (row: number, col: number) => {
+    // Block moves if disconnected mid-game
+    if (isMidGameDisconnect) return;
+
     if (isMyTurn()) {
       gameActions.makeMove(row, col);
     }
@@ -145,8 +206,15 @@ export const useGameManager = () => {
   const resetGame = () => {
     gameActions.setGameState('setup');
     setPlayMode('local');
+    setIsMidGameDisconnect(false);
+    setConnectionError(null);
     network.resetConnection();
   }
+
+  const clearDisconnectState = () => {
+    setIsMidGameDisconnect(false);
+    setConnectionError(null);
+  };
 
   return {
     // State
@@ -155,6 +223,7 @@ export const useGameManager = () => {
     playMode,
     chatMessages,
     connectionError,
+    isMidGameDisconnect,
 
     // Actions
     setPlayMode,
@@ -164,6 +233,7 @@ export const useGameManager = () => {
     handleSquareClick,
     isMyTurn,
     resetGame,
+    clearDisconnectState,
 
     // Pass-through game actions
     gameActions,

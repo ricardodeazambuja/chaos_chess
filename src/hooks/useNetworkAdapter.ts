@@ -4,6 +4,12 @@ import { WebRTCAdapter } from '../network/adapters/WebRTCAdapter';
 import { wrapCode, unwrapCode } from '../network/utils/code-wrapper';
 
 interface UseNetworkAdapterProps {
+  /**
+   * Callback for handling incoming network messages.
+   * Uses `any` to match the flexible NetworkMessage type from INetworkAdapter.
+   * Type safety is enforced at the application layer via discriminated unions.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onMessage: (message: any) => void;
   adapterType?: 'webrtc'; // Future: 'simple-peer' | 'trystero' | 'peerjs'
 }
@@ -11,6 +17,9 @@ interface UseNetworkAdapterProps {
 export const useNetworkAdapter = ({ onMessage, adapterType = 'webrtc' }: UseNetworkAdapterProps) => {
   // Create adapter instance (memoized)
   const adapterRef = useRef<INetworkAdapter | null>(null);
+
+  // Track if we were ever connected (to distinguish setup failures from mid-game disconnects)
+  const wasConnectedRef = useRef<boolean>(false);
 
   if (!adapterRef.current) {
     // Factory pattern - create adapter based on type
@@ -85,9 +94,16 @@ export const useNetworkAdapter = ({ onMessage, adapterType = 'webrtc' }: UseNetw
 
     // Subscribe to status changes
     adapter.onStatusChange((status, message) => {
-      setIsConnected(adapter.isConnected);
+      const nowConnected = adapter.isConnected;
+
+      setIsConnected(nowConnected);
       setNetworkRole(adapter.role);
       setConnectionMessage(message);
+
+      // Track if we've ever been connected (for distinguishing disconnect scenarios)
+      if (nowConnected && !wasConnectedRef.current) {
+        wasConnectedRef.current = true;
+      }
 
       // Update connection data if available
       if (adapter.getConnectionData) {
@@ -96,17 +112,19 @@ export const useNetworkAdapter = ({ onMessage, adapterType = 'webrtc' }: UseNetw
         if (answer) setConnectionAnswer(wrapCode(answer, 'ANSWER'));
       }
 
-      // Notify parent of connection failures via onMessage
-      if (status === 'failed' && message) {
+      // Notify parent of ALL connection failures (not just 'failed' status)
+      // This includes mid-game disconnections ('disconnected', 'closed')
+      if ((status === 'failed' || status === 'disconnected' || status === 'closed') && message) {
         onMessage({
           type: 'CONNECTION_ERROR',
-          error: message
+          error: message,
+          wasMidGame: wasConnectedRef.current // Context: was this after successful connection?
         });
       }
     });
 
     // Subscribe to errors
-    adapter.onError((error) => {
+    adapter.onError(() => {
       // Could show a toast/alert here in the future
     });
 
@@ -216,6 +234,12 @@ export const useNetworkAdapter = ({ onMessage, adapterType = 'webrtc' }: UseNetw
     }
   }, [adapter, onMessage, startCountdown, stopCountdown]);
 
+  /**
+   * Broadcasts a message to all connected peers.
+   * Uses `any` to match NetworkMessage type for adapter flexibility.
+   * Type safety is enforced by the caller (useGameManager).
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const broadcastMove = useCallback((message: any) => {
     adapter.broadcast(message);
   }, [adapter]);

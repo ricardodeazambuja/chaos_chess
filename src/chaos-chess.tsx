@@ -6,6 +6,7 @@ import ChessBoard from './components/ChessBoard';
 import GameInfoPanel from './components/GameInfoPanel';
 import ChatBox from './components/ChatBox';
 import ConnectionError from './components/ConnectionError';
+import DisconnectionModal from './components/DisconnectionModal';
 import { useGameManager } from './hooks/useGameManager';
 import { getPieceSymbol, getPieceStyle } from './chess-logic';
 
@@ -23,6 +24,7 @@ const ChaosChess = () => {
     playMode,
     chatMessages,
     connectionError,
+    isMidGameDisconnect,
     setPlayMode,
     setConnectionError,
     sendChatMessage,
@@ -30,6 +32,7 @@ const ChaosChess = () => {
     handleSquareClick,
     isMyTurn,
     resetGame,
+    clearDisconnectState,
     gameActions,
   } = useGameManager();
 
@@ -120,8 +123,14 @@ const ChaosChess = () => {
             Chaos Chess
           </h1>
           {playMode === 'network' && (
-            <div className="text-sm text-amber-300">
-              🌐 Network Game - {network.networkRole === 'host' ? 'Host' : 'Guest'} {network.isConnected ? '(Connected)' : '(Connecting...)'}
+            <div className={`text-sm font-semibold ${
+              network.isConnected ? 'text-green-400' :
+              isMidGameDisconnect ? 'text-red-400 animate-pulse' : 'text-amber-300'
+            }`}>
+              {network.isConnected ? '🟢' : isMidGameDisconnect ? '🔴' : '🟡'}
+              {' '}Network Game - {network.networkRole === 'host' ? 'Host' : 'Guest'}
+              {' '}{network.isConnected ? '(Connected)' :
+                   isMidGameDisconnect ? '(DISCONNECTED)' : '(Connecting...)'}
             </div>
           )}
           
@@ -192,15 +201,27 @@ const ChaosChess = () => {
         )}
 
         <div className="flex flex-col lg:flex-row gap-4 sm:gap-6 items-center lg:items-start justify-center w-full">
-          <ChessBoard
-            board={game.board}
-            selectedSquare={game.selectedSquare}
-            validMoves={game.validMoves}
-            singleMove={game.singleMove}
-            handleSquareClick={handleSquareClick}
-            getPieceStyle={getPieceStyle}
-            getPieceSymbol={getPieceSymbol}
-          />
+          {/* Chess Board with Disconnection Overlay */}
+          <div className="relative w-full max-w-2xl">
+            <ChessBoard
+              board={game.board}
+              selectedSquare={game.selectedSquare}
+              validMoves={game.validMoves}
+              singleMove={game.singleMove}
+              handleSquareClick={handleSquareClick}
+              getPieceStyle={getPieceStyle}
+              getPieceSymbol={getPieceSymbol}
+            />
+
+            {/* Overlay shown when disconnected mid-game */}
+            {isMidGameDisconnect && (
+              <div className="absolute inset-0 bg-slate-900/60 flex items-center justify-center pointer-events-none z-10 rounded-xl">
+                <div className="bg-yellow-500 text-slate-900 px-6 py-3 rounded-lg font-bold text-base sm:text-lg shadow-lg">
+                  ⚠️ Connection Lost - Waiting for opponent...
+                </div>
+              </div>
+            )}
+          </div>
 
           <div className="flex flex-col gap-4 sm:gap-6 w-full lg:w-auto">
             <GameInfoPanel
@@ -230,6 +251,15 @@ const ChaosChess = () => {
             )}
           </div>
         </div>
+
+        {/* Disconnection Modal - shown when opponent disconnects mid-game */}
+        <DisconnectionModal
+          isOpen={isMidGameDisconnect}
+          onReturnToSetup={() => {
+            resetGame();
+            clearDisconnectState();
+          }}
+        />
       </div>
     </div>
   );

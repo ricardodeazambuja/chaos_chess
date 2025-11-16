@@ -22,8 +22,19 @@ export interface ConnectionInfo {
 
 /**
  * Network message payload
- * The adapter handles serialization/deserialization
+ *
+ * Intentionally uses `any` to allow maximum flexibility for different network
+ * adapter implementations. Different adapters (WebRTC, SimplePeer, Trystero, etc.)
+ * may have different message structures and requirements.
+ *
+ * The adapter is responsible for serialization/deserialization and ensuring
+ * type safety at the application layer (e.g., game messages are validated
+ * in useGameManager via discriminated union types).
+ *
+ * Future improvement: Could use a generic type parameter for type-safe adapters,
+ * e.g., INetworkAdapter<TMessage>.
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type NetworkMessage = any;
 
 /**

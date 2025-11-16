@@ -168,7 +168,7 @@ export const isValidMove = (
   const absColDiff = Math.abs(colDiff);
 
   switch (piece.type) {
-    case 'pawn':
+    case 'pawn': {
       const direction = piece.color === 'white' ? -1 : 1;
       const startRow = piece.color === 'white' ? WHITE_PAWN_ROW : BLACK_PAWN_ROW;
 
@@ -196,6 +196,7 @@ export const isValidMove = (
       }
 
       return false;
+    }
 
     case 'rook':
       if (rowDiff === 0 || colDiff === 0) {

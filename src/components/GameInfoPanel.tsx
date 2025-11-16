@@ -1,23 +1,50 @@
 import React from 'react';
 import { RotateCcw } from 'lucide-react';
 
+interface Player {
+  name: string;
+}
+
+interface Piece {
+  type: string;
+  color: 'white' | 'black';
+}
+
+interface Move {
+  player: string;
+  color: string;
+  piece: string;
+  from: string;
+  to: string;
+}
+
+interface Winner {
+  name: string;
+  reason: string;
+}
+
+interface Square {
+  row: number;
+  col: number;
+}
+
 interface GameInfoPanelProps {
-  players: any[];
+  players: Player[];
   gameMode: string;
   currentPlayerIndex: number;
   getPlayerColor: (index: number, moveCount: number) => 'white' | 'black';
   playerMoveCount: number[];
   capturedPieces: { white: string[]; black: string[] };
-  getPieceSymbol: (piece: any) => string;
+  getPieceSymbol: (piece: Piece) => string;
   getPieceStyle: (color: 'white' | 'black') => { color: string; textShadow: string };
   setGameState: (state: string) => void;
-  setWinner: (winner: any) => void;
-  setMoveHistory: (history: any[]) => void;
-  setSelectedSquare: (square: any) => void;
-  setValidMoves: (moves: any[]) => void;
+  setWinner: (winner: Winner | null) => void;
+  setMoveHistory: (history: Move[]) => void;
+  setSelectedSquare: (square: Square | null) => void;
+  setValidMoves: (moves: Square[]) => void;
   setPlayMode: (mode: 'local' | 'network') => void;
   resetConnection: () => void;
-  moveHistory: any[];
+  moveHistory: Move[];
 }
 
 const GameInfoPanel: React.FC<GameInfoPanelProps> = ({
