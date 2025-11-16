@@ -232,10 +232,19 @@ export const isValidMove = (
         if (rook && rook.type === 'rook' && !rook.hasMoved) {
           // Check path is clear between king and rook
           if (isPathClear(fromRow, fromCol, fromRow, rookCol, testBoard)) {
-            // Check king does not pass through check
+            // CASTLING RULES: King cannot pass through check OR land in check
+            // Note: We use piece.color from the function parameter (source of truth),
+            // not any state variable, to avoid the stale state bugs we had previously.
             const stepCol = colDiff > 0 ? 1 : -1;
-            if (!isSquareUnderAttack(fromRow, fromCol + stepCol, piece.color === 'white' ? 'black' : 'white', testBoard, lastMove)) {
-              return true;
+            const enemyColor = piece.color === 'white' ? 'black' : 'white';
+
+            // Rule 1: King cannot pass THROUGH a square under attack (f1/f8 or d1/d8)
+            if (!isSquareUnderAttack(fromRow, fromCol + stepCol, enemyColor, testBoard, lastMove)) {
+              // Rule 2: King cannot LAND ON a square under attack (g1/g8 or c1/c8)
+              // This was missing before (BUG) - now fixed
+              if (!isSquareUnderAttack(fromRow, toCol, enemyColor, testBoard, lastMove)) {
+                return true;
+              }
             }
           }
         }
