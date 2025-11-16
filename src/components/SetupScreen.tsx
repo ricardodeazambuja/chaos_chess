@@ -1,5 +1,7 @@
 import React from 'react';
 import { Crown, Users, RotateCcw, Clock, DollarSign } from 'lucide-react';
+import ConnectionImage from './ConnectionImage';
+import ImageUploader from './ImageUploader';
 
 const SetupScreen = ({
   players,
@@ -82,17 +84,30 @@ const SetupScreen = ({
         
         {/* Network Setup */}
         {playMode === 'network' && !networkRole && (
-          <div className="mb-6 p-4 bg-blue-50 rounded-lg border-2 border-blue-200">
-            <h3 className="font-bold text-slate-800 mb-3">Choose Your Role</h3>
-            <div className="space-y-2">
-              <button
-                onClick={createHostConnection}
-                className="w-full px-4 py-2 bg-green-500 text-white font-bold rounded-lg hover:bg-green-600"
-              >
-                🎮 Host Game
-              </button>
-              <div className="text-center text-sm text-slate-600">or</div>
-              <div className="space-y-2">
+          <div className="mb-6 p-4 bg-blue-50 rounded-lg border-2 border-blue-200 space-y-4">
+            <h3 className="font-bold text-slate-800">Choose Your Role</h3>
+
+            <button
+              onClick={createHostConnection}
+              className="w-full px-4 py-2 bg-green-500 text-white font-bold rounded-lg hover:bg-green-600"
+            >
+              🎮 Host Game
+            </button>
+
+            <div className="text-center text-sm text-slate-600 font-bold">OR</div>
+
+            <div className="space-y-4">
+              <h4 className="font-bold text-slate-800 text-sm">Join as Guest</h4>
+
+              {/* Image Upload Option */}
+              <ImageUploader
+                onHashExtracted={(hash) => setHostOfferInput(hash)}
+                label="📸 Option 1: Upload Host's Image"
+              />
+
+              {/* Text Option */}
+              <div className="pt-4 border-t border-blue-200">
+                <h4 className="font-bold text-slate-800 text-sm mb-2">📝 Option 2: Paste Text Code</h4>
                 <input
                   type="text"
                   placeholder="Paste host's connection code here"
@@ -100,48 +115,72 @@ const SetupScreen = ({
                   onChange={(e) => setHostOfferInput(e.target.value)}
                   className="w-full px-3 py-2 border-2 border-slate-300 rounded-lg text-sm"
                 />
-                <button
-                  onClick={() => createGuestConnection(hostOfferInput)}
-                  disabled={!hostOfferInput}
-                  className="w-full px-4 py-2 bg-blue-500 text-white font-bold rounded-lg hover:bg-blue-600 disabled:opacity-50"
-                >
-                  🔌 Join Game
-                </button>
               </div>
+
+              <button
+                onClick={() => createGuestConnection(hostOfferInput)}
+                disabled={!hostOfferInput}
+                className="w-full px-4 py-2 bg-blue-500 text-white font-bold rounded-lg hover:bg-blue-600 disabled:opacity-50"
+              >
+                🔌 Join Game
+              </button>
             </div>
           </div>
         )}
         
         {/* Host Connection Display */}
         {playMode === 'network' && networkRole === 'host' && !isConnected && (
-          <div className="mb-6 p-4 bg-green-50 rounded-lg border-2 border-green-300">
-            <h3 className="font-bold text-slate-800 mb-2">🔗 Share this code with your friend</h3>
-            <p className="text-sm text-slate-600 mb-2">Copy and send this offer code to them:</p>
-            <div className="bg-white p-3 rounded-lg border-2 border-slate-300 mb-2 break-all text-xs font-mono max-h-24 overflow-y-auto">
-              {connectionOffer}
+          <div className="mb-6 p-4 bg-green-50 rounded-lg border-2 border-green-300 space-y-4">
+            <h3 className="font-bold text-slate-800">🎮 Share Connection with Guest</h3>
+
+            {/* Image Option */}
+            <ConnectionImage
+              hash={connectionOffer}
+              role="offer"
+              label="📸 Option 1: Share as Image (Recommended)"
+            />
+
+            {/* Text Option */}
+            <div className="pt-4 border-t border-green-200">
+              <h4 className="font-bold text-slate-800 text-sm mb-2">📝 Option 2: Share as Text</h4>
+              <div className="bg-white p-3 rounded-lg border-2 border-slate-300 mb-2 break-all text-xs font-mono max-h-24 overflow-y-auto">
+                {connectionOffer}
+              </div>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(connectionOffer);
+                  alert('Code copied! Share it with your friend.');
+                }}
+                className="w-full px-3 py-2 bg-green-500 text-white font-bold rounded-lg hover:bg-green-600 text-sm"
+              >
+                📋 Copy Text Code
+              </button>
             </div>
-            <button
-              onClick={() => {
-                navigator.clipboard.writeText(connectionOffer);
-                alert('Code copied! Share it with your friend.');
-              }}
-              className="w-full px-3 py-2 bg-green-500 text-white font-bold rounded-lg hover:bg-green-600 text-sm"
-            >
-              📋 Copy Offer Code
-            </button>
-            <p className="text-xs text-slate-500 mt-2 text-center">Waiting for friend to connect...</p>
+
+            <p className="text-xs text-slate-500 text-center pt-2">⏳ Waiting for guest to connect...</p>
 
             {/* Host accepts guest's answer */}
-            <div className="mt-4 pt-4 border-t border-green-200">
-              <h3 className="font-bold text-slate-800 mb-2">Guest's Answer Code</h3>
-              <p className="text-sm text-slate-600 mb-2">Paste the answer code your friend sent you:</p>
-              <input
-                type="text"
-                placeholder="Paste guest's answer code here"
-                value={guestAnswerInput}
-                onChange={(e) => setGuestAnswerInput(e.target.value)}
-                className="w-full px-3 py-2 border-2 border-slate-300 rounded-lg text-sm mb-2"
+            <div className="pt-4 border-t border-green-200 space-y-4">
+              <h3 className="font-bold text-slate-800">🔌 Receive Guest's Answer</h3>
+
+              {/* Image Upload Option */}
+              <ImageUploader
+                onHashExtracted={(hash) => setGuestAnswerInput(hash)}
+                label="📸 Option 1: Upload Guest's Image"
               />
+
+              {/* Text Option */}
+              <div className="pt-4 border-t border-green-200">
+                <h4 className="font-bold text-slate-800 text-sm mb-2">📝 Option 2: Paste Text Code</h4>
+                <input
+                  type="text"
+                  placeholder="Paste guest's answer code here"
+                  value={guestAnswerInput}
+                  onChange={(e) => setGuestAnswerInput(e.target.value)}
+                  className="w-full px-3 py-2 border-2 border-slate-300 rounded-lg text-sm mb-2"
+                />
+              </div>
+
               <button
                 onClick={() => acceptGuestAnswer(guestAnswerInput)}
                 disabled={!guestAnswerInput}
@@ -163,22 +202,34 @@ const SetupScreen = ({
         
         {/* Guest Connection Display - Not Connected */}
         {playMode === 'network' && networkRole === 'guest' && !isConnected && (
-          <div className="mb-6 p-4 bg-blue-50 rounded-lg border-2 border-blue-300">
-            <h3 className="font-bold text-slate-800 mb-2">🔗 Send this code back to the host</h3>
-            <p className="text-sm text-slate-600 mb-2">Copy and send this answer code to the host:</p>
-            <div className="bg-white p-3 rounded-lg border-2 border-slate-300 mb-2 break-all text-xs font-mono max-h-24 overflow-y-auto">
-              {connectionAnswer}
+          <div className="mb-6 p-4 bg-blue-50 rounded-lg border-2 border-blue-300 space-y-4">
+            <h3 className="font-bold text-slate-800">🔗 Send Answer to Host</h3>
+
+            {/* Image Option */}
+            <ConnectionImage
+              hash={connectionAnswer}
+              role="answer"
+              label="📸 Option 1: Share as Image (Recommended)"
+            />
+
+            {/* Text Option */}
+            <div className="pt-4 border-t border-blue-200">
+              <h4 className="font-bold text-slate-800 text-sm mb-2">📝 Option 2: Share as Text</h4>
+              <div className="bg-white p-3 rounded-lg border-2 border-slate-300 mb-2 break-all text-xs font-mono max-h-24 overflow-y-auto">
+                {connectionAnswer}
+              </div>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(connectionAnswer);
+                  alert('Code copied! Send it back to the host.');
+                }}
+                className="w-full px-3 py-2 bg-blue-500 text-white font-bold rounded-lg hover:bg-blue-600 text-sm"
+              >
+                📋 Copy Text Code
+              </button>
             </div>
-            <button
-              onClick={() => {
-                navigator.clipboard.writeText(connectionAnswer);
-                alert('Code copied! Send it back to the host.');
-              }}
-              className="w-full px-3 py-2 bg-blue-500 text-white font-bold rounded-lg hover:bg-blue-600 text-sm"
-            >
-              📋 Copy Answer Code
-            </button>
-            <p className="text-sm text-slate-600 mt-3 text-center">⏳ Waiting for connection...</p>
+
+            <p className="text-sm text-slate-600 text-center pt-2">⏳ Waiting for host to accept...</p>
           </div>
         )}
 
