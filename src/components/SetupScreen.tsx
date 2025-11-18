@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Crown, Users, Clock, DollarSign, Copy, ClipboardPaste, Loader } from 'lucide-react';
+import { Crown, Users, Clock, DollarSign, Copy, ClipboardPaste, Loader, Cpu } from 'lucide-react';
 
 const SetupScreen = ({
   players,
@@ -43,6 +43,16 @@ const SetupScreen = ({
     setCopiedMessage(message);
     setTimeout(() => setCopiedMessage(''), 2000);
   };
+
+  React.useEffect(() => {
+    if (playMode === 'ai') {
+      // Fix players for AI mode
+      setPlayers([
+        { name: players[0]?.name || 'Player 1' },
+        { name: 'AI' },
+      ]);
+    }
+  }, [playMode, setPlayers]);
 
   const renderNetworkSetup = () => {
     // 1. Initial role selection
@@ -241,13 +251,27 @@ const SetupScreen = ({
               <div className="font-bold text-slate-800">🌐 Network Game</div>
               <div className="text-sm text-slate-600">Play with friends online</div>
             </button>
+            <button
+              onClick={() => setPlayMode('ai')}
+              className={`w-full p-4 rounded-lg border-2 text-left transition-all ${
+                playMode === 'ai' 
+                  ? 'border-blue-500 bg-blue-50' 
+                  : 'border-slate-300 bg-white hover:border-blue-300'
+              }`}
+            >
+              <div className="font-bold text-slate-800 flex items-center">
+                <Cpu size={20} className="mr-2" />
+                Play vs. AI
+              </div>
+              <div className="text-sm text-slate-600">Challenge a computer opponent</div>
+            </button>
           </div>
         </div>
         
         {renderNetworkSetup()}
         
-        {/* Show game setup only if local OR (network host is connected) */}
-        {(playMode === 'local' || (playMode === 'network' && networkRole === 'host' && isConnected)) && (
+        {/* Show game setup only if local, AI, OR (network host is connected) */}
+        {(playMode === 'local' || playMode === 'ai' || (playMode === 'network' && networkRole === 'host' && isConnected)) && (
           <>
             <div className="mb-6">
               <label className="block text-sm font-bold text-slate-700 mb-2">Game Mode</label>
@@ -330,7 +354,7 @@ const SetupScreen = ({
               </div>
             </div>
             
-            {playMode === 'local' && gameMode !== 'normie' && (
+            {(playMode === 'local' || playMode === 'ai') && gameMode !== 'normie' && (
               <div className="space-y-3 mb-6">
                 {players.map((player, index) => (
                   <div key={index} className="flex gap-2">
@@ -340,6 +364,7 @@ const SetupScreen = ({
                       onChange={(e) => updatePlayerName(index, e.target.value)}
                       className="flex-1 px-4 py-2 border-2 border-slate-300 rounded-lg focus:outline-none focus:border-amber-500"
                       placeholder={`Player ${index + 1}`}
+                      disabled={playMode === 'ai' && index === 1}
                     />
                     {players.length > 2 && (
                       <button

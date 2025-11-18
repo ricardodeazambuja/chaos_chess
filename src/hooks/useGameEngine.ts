@@ -103,8 +103,17 @@ export const useGameEngine = ({ onGameStart, onMoveMade, onGameOver }: GameEngin
   // En Passant state
   const [lastMove, setLastMove] = useState<LastMove | null>(null);
 
+  // Castling state
+  const [castlingAvailability, setCastlingAvailability] = useState({
+    whiteKingSide: true,
+    whiteQueenSide: true,
+    blackKingSide: true,
+    blackQueenSide: true,
+  });
+
   // Captured Pieces state
   const [capturedPieces, setCapturedPieces] = useState<CapturedPieces>({ white: [], black: [] });
+
 
   // Single move highlight - derived via useMemo instead of state to avoid setState in effect
   // (removed useState)
@@ -202,11 +211,126 @@ export const useGameEngine = ({ onGameStart, onMoveMade, onGameOver }: GameEngin
     });
   }, [currentPlayerIndex, players, gameMode, randomPlayerColor, isPointsGame, playerScores, onGameOver, onMoveMade, playerTimes]);
 
-  const makeMove = useCallback((row: number, col: number) => {
+  const makeMove = useCallback((row: number, col: number, toRow?: number, toCol?: number) => {
     if (gameState !== 'playing' || winner) return;
 
     const piece = board[row][col];
     const currentPlayerColor = getPlayerColor(currentPlayerIndex, playerMoveCount[currentPlayerIndex] || 0);
+
+    if (toRow !== undefined && toCol !== undefined) {
+      // AI or programmatic move
+      const fromSquare = { row, col };
+      const toSquare = { row: toRow, col: toCol };
+      const movingPiece = { ...board[fromSquare.row][fromSquare.col]! };
+      const isValid = isValidMove(fromSquare.row, fromSquare.col, toSquare.row, toSquare.col, movingPiece, board, lastMove) && !wouldBeInCheck(fromSquare.row, fromSquare.col, toSquare.row, toSquare.col, board, lastMove);
+
+      if (isValid) {
+        const newBoard = board.map(r => [...r]);
+        const capturedPiece = newBoard[toSquare.row][toSquare.col];
+        let enPassantCapture = null;
+
+        if (movingPiece.type === 'king' || movingPiece.type === 'rook' || movingPiece.type === 'pawn') {
+          movingPiece.hasMoved = true;
+        }
+
+        // Update castling availability
+        const newCastlingAvailability = { ...castlingAvailability };
+        if (movingPiece.type === 'king') {
+          if (movingPiece.color === 'white') {
+            newCastlingAvailability.whiteKingSide = false;
+            newCastlingAvailability.whiteQueenSide = false;
+          } else {
+            newCastlingAvailability.blackKingSide = false;
+            newCastlingAvailability.blackQueenSide = false;
+          }
+        }
+        if (movingPiece.type === 'rook') {
+          if (movingPiece.color === 'white') {
+            if (fromSquare.row === WHITE_BACK_ROW && fromSquare.col === 0) {
+              newCastlingAvailability.whiteQueenSide = false;
+            }
+            if (fromSquare.row === WHITE_BACK_ROW && fromSquare.col === BOARD_MAX_INDEX) {
+              newCastlingAvailability.whiteKingSide = false;
+            }
+          } else {
+            if (fromSquare.row === BLACK_BACK_ROW && fromSquare.col === 0) {
+              newCastlingAvailability.blackQueenSide = false;
+            }
+            if (fromSquare.row === BLACK_BACK_ROW && fromSquare.col === BOARD_MAX_INDEX) {
+              newCastlingAvailability.blackKingSide = false;
+            }
+          }
+        }
+        setCastlingAvailability(newCastlingAvailability);
+
+        newBoard[toSquare.row][toSquare.col] = movingPiece;
+        newBoard[fromSquare.row][fromSquare.col] = null;
+
+        if (movingPiece.type === 'pawn' && !capturedPiece && Math.abs(toSquare.col - fromSquare.col) === 1) {
+          enPassantCapture = newBoard[fromSquare.row][toSquare.col];
+          newBoard[fromSquare.row][toSquare.col] = null;
+        }
+        
+        if (movingPiece.type === 'king' && Math.abs(toSquare.col - fromSquare.col) === 2) {
+          const rookCol = toSquare.col > fromSquare.col ? BOARD_MAX_INDEX : 0;
+          const newRookCol = toSquare.col > fromSquare.col ? 5 : 3;
+          const rook = { ...newBoard[fromSquare.row][rookCol]! };
+          rook.hasMoved = true;
+          newBoard[fromSquare.row][newRookCol] = rook;
+          newBoard[fromSquare.row][rookCol] = null;
+        }
+        
+        setBoard(newBoard);
+
+        const actualCaptured = capturedPiece || enPassantCapture;
+        let updatedPlayerScores = playerScores;
+        if (actualCaptured) {
+          setCapturedPieces(prev => ({ ...prev, [movingPiece.color]: [...prev[movingPiece.color], actualCaptured.type] }));
+          if (isPointsGame) {
+            updatedPlayerScores = [...playerScores];
+            updatedPlayerScores[currentPlayerIndex] = (updatedPlayerScores[currentPlayerIndex] || 0) + PIECE_VALUES[actualCaptured.type];
+            setPlayerScores(updatedPlayerScores);
+
+            if (updatedPlayerScores[currentPlayerIndex] >= targetScore) {
+              const winnerInfo = { name: players[currentPlayerIndex].name, reason: 'Target Score' };
+              setWinner(winnerInfo);
+              setGameState('finished');
+              onGameOver?.({ winner: winnerInfo });
+              return;
+            }
+          }
+        }
+
+        const newLastMove = { fromRow: fromSquare.row, fromCol: fromSquare.col, toRow: toSquare.row, toCol: toSquare.col, piece: movingPiece };
+        setLastMove(newLastMove);
+
+        const newHistory = [...moveHistory, { player: players[currentPlayerIndex].name, color: currentPlayerColor, from: `${String.fromCharCode(97 + fromSquare.col)}${8 - fromSquare.row}`, to: `${String.fromCharCode(97 + toSquare.col)}${8 - toSquare.row}`, piece: movingPiece.type }];
+        setMoveHistory(newHistory);
+
+        setSelectedSquare(null);
+        setValidMoves([]);
+
+        const newPlayerMoveCount = [...playerMoveCount];
+        newPlayerMoveCount[currentPlayerIndex] = (newPlayerMoveCount[currentPlayerIndex] || 0) + 1;
+        setPlayerMoveCount(newPlayerMoveCount);
+
+        const checkStatus = isInCheck(currentPlayerColor, newBoard, newLastMove);
+        setInCheck(checkStatus);
+
+        if (capturedPiece?.type === 'king') {
+          const winnerInfo = { name: players[currentPlayerIndex].name, reason: 'King Capture' };
+          setWinner(winnerInfo);
+          setGameState('finished');
+          onGameOver?.({ winner: winnerInfo });
+        } else if (movingPiece.type === 'pawn' && (toSquare.row === BLACK_BACK_ROW || toSquare.row === WHITE_BACK_ROW)) {
+          setGameState('promoting');
+          setPromotionSquare({ row: toSquare.row, col: toSquare.col, color: movingPiece.color });
+        } else {
+          advanceTurn(newBoard, newHistory, newPlayerMoveCount, newLastMove);
+        }
+      }
+      return;
+    }
 
     if (selectedSquare) {
       const isValidMoveSquare = validMoves.some(m => m.row === row && m.col === col);
@@ -220,6 +344,36 @@ export const useGameEngine = ({ onGameStart, onMoveMade, onGameOver }: GameEngin
         if (movingPiece.type === 'king' || movingPiece.type === 'rook' || movingPiece.type === 'pawn') {
           movingPiece.hasMoved = true;
         }
+
+        // Update castling availability
+        const newCastlingAvailability = { ...castlingAvailability };
+        if (movingPiece.type === 'king') {
+          if (movingPiece.color === 'white') {
+            newCastlingAvailability.whiteKingSide = false;
+            newCastlingAvailability.whiteQueenSide = false;
+          } else {
+            newCastlingAvailability.blackKingSide = false;
+            newCastlingAvailability.blackQueenSide = false;
+          }
+        }
+        if (movingPiece.type === 'rook') {
+          if (movingPiece.color === 'white') {
+            if (selectedSquare.row === WHITE_BACK_ROW && selectedSquare.col === 0) {
+              newCastlingAvailability.whiteQueenSide = false;
+            }
+            if (selectedSquare.row === WHITE_BACK_ROW && selectedSquare.col === BOARD_MAX_INDEX) {
+              newCastlingAvailability.whiteKingSide = false;
+            }
+          } else {
+            if (selectedSquare.row === BLACK_BACK_ROW && selectedSquare.col === 0) {
+              newCastlingAvailability.blackQueenSide = false;
+            }
+            if (selectedSquare.row === BLACK_BACK_ROW && selectedSquare.col === BOARD_MAX_INDEX) {
+              newCastlingAvailability.blackKingSide = false;
+            }
+          }
+        }
+        setCastlingAvailability(newCastlingAvailability);
 
         newBoard[row][col] = movingPiece;
         newBoard[selectedSquare.row][selectedSquare.col] = null;
@@ -300,7 +454,7 @@ export const useGameEngine = ({ onGameStart, onMoveMade, onGameOver }: GameEngin
       setSelectedSquare({ row, col });
       setValidMoves(getValidMovesForPiece(row, col));
     }
-  }, [gameState, winner, board, selectedSquare, validMoves, currentPlayerIndex, playerMoveCount, getPlayerColor, isPointsGame, moveHistory, players, advanceTurn, onGameOver, getValidMovesForPiece, targetScore, playerScores]);
+  }, [gameState, winner, board, selectedSquare, validMoves, currentPlayerIndex, playerMoveCount, getPlayerColor, isPointsGame, moveHistory, players, advanceTurn, onGameOver, getValidMovesForPiece, targetScore, playerScores, castlingAvailability]);
 
   const promotePawn = useCallback((chosenPiece: Piece['type']) => {
     if (gameState !== 'promoting' || !promotionSquare) return;
@@ -338,6 +492,12 @@ export const useGameEngine = ({ onGameStart, onMoveMade, onGameOver }: GameEngin
     setPlayerMoveCount(players.map(() => 0));
     setRandomPlayerColor(initialRandomColor);
     setInCheck(false);
+    setCastlingAvailability({
+      whiteKingSide: true,
+      whiteQueenSide: true,
+      blackKingSide: true,
+      blackQueenSide: true,
+    });
 
     const initialPlayerTimes = isTimedGame ? players.map(() => timeSetting * 60) : [];
     setPlayerTimes(initialPlayerTimes);
@@ -505,6 +665,7 @@ export const useGameEngine = ({ onGameStart, onMoveMade, onGameOver }: GameEngin
       capturedPieces,
       singleMove,
       inCheck,
+      castlingAvailability,
     },
     actions: {
       setGameState,

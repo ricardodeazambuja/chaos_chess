@@ -1,5 +1,5 @@
 import React from 'react';
-import { Crown } from 'lucide-react';
+import { Crown, Loader, XCircle } from 'lucide-react'; // Import Loader and XCircle for the modal
 import SetupScreen from './components/SetupScreen';
 import PromotionModal from './components/PromotionModal';
 import ChessBoard from './components/ChessBoard';
@@ -25,6 +25,8 @@ const ChaosChess = () => {
     chatMessages,
     connectionError,
     isMidGameDisconnect,
+    isAILoading, // Get AI loading state
+    aiError,     // Get AI error state
     setPlayMode,
     setConnectionError,
     sendChatMessage,
@@ -35,6 +37,29 @@ const ChaosChess = () => {
     clearDisconnectState,
     gameActions,
   } = useGameManager();
+
+  // AI Loading Modal
+  if (playMode === 'ai' && isAILoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 max-w-md w-full text-center">
+          <Loader className="animate-spin text-blue-500 mx-auto mb-4" size={48} />
+          <h2 className="text-2xl font-bold text-slate-800 mb-2">Loading AI Engine...</h2>
+          <p className="text-slate-600 mb-4">This might take a moment as we download the AI. Please wait.</p>
+          {aiError && (
+            <p className="text-red-500 mb-4">Error: {aiError}</p>
+          )}
+          <button
+            onClick={resetGame}
+            className="w-full px-6 py-3 bg-red-500 text-white font-bold rounded-lg hover:bg-red-600 transition-colors flex items-center justify-center gap-2"
+          >
+            <XCircle size={20} />
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (game.gameState === 'setup') {
     return (
@@ -61,7 +86,7 @@ const ChaosChess = () => {
           createHostConnection={network.createHostConnection}
           createGuestConnection={network.createGuestConnection}
           hostOfferInput={network.hostOfferInput}
-          setHostOfferInput={network.setHostOfferInput}
+          setHostOfferInput={network.hostOfferInput}
           guestAnswerInput={network.guestAnswerInput}
           setGuestAnswerInput={network.setGuestAnswerInput}
           connectionOffer={network.connectionOffer}

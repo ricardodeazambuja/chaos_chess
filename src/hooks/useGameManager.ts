@@ -2,7 +2,9 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useGameEngine } from './useGameEngine';
 import type { GameStartData, MoveMadeData } from './useGameEngine';
 import { useNetworkAdapter } from './useNetworkAdapter';
+import { useAIPlayer } from './useAIPlayer'; // Import the AI player hook
 import type { Piece } from '../chess-logic';
+import { fromAlgebraic } from '../chess-logic';
 
 interface ChatMessage {
   playerName: string;
@@ -23,7 +25,7 @@ interface GameActions {
   removePlayer: (index: number) => void;
   updatePlayerName: (index: number, name: string) => void;
   startGame: () => void;
-  makeMove: (row: number, col: number) => void;
+  makeMove: (row: number, col: number, toRow?: number, toCol?: number) => void;
   promotePawn: (pieceType: Piece['type']) => void;
   getPlayerColor: (index: number, moveCount: number) => 'white' | 'black';
   receiveNetworkGameStart: (data: GameStartData) => void;
@@ -68,11 +70,13 @@ type NetworkMessage =
   | GameOverNetworkMessage;
 
 export const useGameManager = () => {
-  const [playMode, setPlayMode] = useState<'local' | 'network'>('local');
+  const [playMode, setPlayMode] = useState<'local' | 'network' | 'ai'>('local');
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [isMidGameDisconnect, setIsMidGameDisconnect] = useState<boolean>(false);
   const gameActionsRef = useRef<GameActions | null>(null);
+
+  const { isAILoading, aiError, calculateBestMove, cancelCalculation } = useAIPlayer();
 
   const handlePeerMessage = useCallback((message: NetworkMessage) => {
     const actions = gameActionsRef.current;
@@ -162,6 +166,37 @@ export const useGameManager = () => {
     }
   }, [playMode, game.gameState, network.isConnected, isMidGameDisconnect]);
 
+  // AI Logic
+  useEffect(() => {
+    if (playMode === 'ai' && game.gameState === 'playing' && game.currentPlayerIndex === 1 && !isAILoading) {
+      const aiPlayerColor = gameActions.getPlayerColor(1, game.moveCount);
+      // Assuming a fixed skill level for now, can be made configurable
+      const skillLevel = 10; 
+
+      calculateBestMove(
+        game.board,
+        aiPlayerColor,
+        skillLevel,
+        game.lastMove,
+        game.castlingAvailability,
+        game.halfmoveClock,
+        game.fullmoveNumber
+      ).then(move => {
+        if (move) {
+          const fromCoords = fromAlgebraic(move.from);
+          const toCoords = fromAlgebraic(move.to);
+
+          const from = game.board[fromCoords.row][fromCoords.col];
+          if (from && from.type === 'pawn' && (toCoords.row === 0 || toCoords.row === 7)) {
+            // AI pawn promotion, always promote to queen for simplicity
+            gameActions.promotePawn('queen');
+          }
+          gameActions.makeMove(fromCoords.row, fromCoords.col, toCoords.row, toCoords.col);
+        }
+      });
+    }
+  }, [playMode, game.gameState, game.currentPlayerIndex, isAILoading, calculateBestMove, game.board, game.lastMove, game.castlingAvailability, game.halfmoveClock, game.fullmoveNumber, game.moveCount, gameActions]);
+
   const sendChatMessage = (message: string) => {
     if (playMode === 'network') {
       const myPlayerIndex = network.networkRole === 'host' ? 0 : 1;
@@ -182,7 +217,12 @@ export const useGameManager = () => {
   };
 
   const isMyTurn = (): boolean => {
-    if (playMode === 'local') return true;
+    if (playMode === 'local') {
+      return true;
+    }
+    if (playMode === 'ai') {
+      return game.currentPlayerIndex === 0;
+    }
     const myPlayerIndex = network.networkRole === 'host' ? 0 : 1;
     return game.currentPlayerIndex === myPlayerIndex;
   };
@@ -209,6 +249,7 @@ export const useGameManager = () => {
     setIsMidGameDisconnect(false);
     setConnectionError(null);
     network.resetConnection();
+    cancelCalculation(); // Cancel any ongoing AI calculation
   }
 
   const clearDisconnectState = () => {
@@ -224,6 +265,8 @@ export const useGameManager = () => {
     chatMessages,
     connectionError,
     isMidGameDisconnect,
+    isAILoading, // Expose AI loading state
+    aiError,     // Expose AI error state
 
     // Actions
     setPlayMode,
@@ -239,3 +282,4 @@ export const useGameManager = () => {
     gameActions,
   };
 };
+

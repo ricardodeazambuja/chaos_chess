@@ -1,3 +1,11 @@
+export type Board = (Piece | null)[][];
+
+export interface Move {
+  from: string; // e.g., 'e2'
+  to: string;   // e.g., 'e4'
+  promotion?: string; // e.g., 'q' for queen
+}
+
 export interface Piece {
   type: 'king' | 'queen' | 'rook' | 'bishop' | 'knight' | 'pawn';
   color: 'white' | 'black';
@@ -30,8 +38,8 @@ export const PIECE_VALUES: Record<Piece['type'], number> = {
   king: 0 // King's value is usually infinite, but for scoring captured pieces, it's 0 as it ends the game.
 };
 
-export const initializeBoard = (): (Piece | null)[][] => {
-  const newBoard: (Piece | null)[][] = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null));
+export const initializeBoard = (): Board => {
+  const newBoard: Board = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null));
 
   // Pawns
   for (let i = 0; i < BOARD_SIZE; i++) {
@@ -64,6 +72,90 @@ export const initializeBoard = (): (Piece | null)[][] => {
   return newBoard;
 };
 
+// Helper to convert row/col to algebraic notation (e.g., 0,0 -> 'a8')
+export const toAlgebraic = (row: number, col: number): string => {
+  const file = String.fromCharCode(97 + col); // 'a' through 'h'
+  const rank = 8 - row; // '8' through '1'
+  return `${file}${rank}`;
+};
+
+// Helper to convert algebraic notation to row/col (e.g., 'a8' -> 0,0)
+export const fromAlgebraic = (square: string): { row: number; col: number } => {
+  const file = square.charCodeAt(0) - 97;
+  const rank = 8 - parseInt(square[1], 10);
+  return { row: rank, col: file };
+};
+
+export const boardToFen = (
+  board: Board,
+  currentPlayerColor: 'white' | 'black',
+  castlingAvailability: {
+    whiteKingSide: boolean;
+    whiteQueenSide: boolean;
+    blackKingSide: boolean;
+    blackQueenSide: boolean;
+  },
+  enPassantTarget: string | null, // e.g., 'e3' or '-'
+  halfmoveClock: number,
+  fullmoveNumber: number
+): string => {
+  let fen = '';
+
+  // 1. Piece placement
+  for (let r = 0; r < BOARD_SIZE; r++) {
+    let emptyCount = 0;
+    for (let c = 0; c < BOARD_SIZE; c++) {
+      const piece = board[r][c];
+      if (piece) {
+        if (emptyCount > 0) {
+          fen += emptyCount;
+          emptyCount = 0;
+        }
+        let symbol = '';
+        switch (piece.type) {
+          case 'pawn': symbol = 'p'; break;
+          case 'knight': symbol = 'n'; break;
+          case 'bishop': symbol = 'b'; break;
+          case 'rook': symbol = 'r'; break;
+          case 'queen': symbol = 'q'; break;
+          case 'king': symbol = 'k'; break;
+        }
+        fen += piece.color === 'white' ? symbol.toUpperCase() : symbol;
+      } else {
+        emptyCount++;
+      }
+    }
+    if (emptyCount > 0) {
+      fen += emptyCount;
+    }
+    if (r < BOARD_MAX_INDEX) {
+      fen += '/';
+    }
+  }
+
+  // 2. Active color
+  fen += ` ${currentPlayerColor === 'white' ? 'w' : 'b'}`;
+
+  // 3. Castling availability
+  let castling = '';
+  if (castlingAvailability.whiteKingSide) castling += 'K';
+  if (castlingAvailability.whiteQueenSide) castling += 'Q';
+  if (castlingAvailability.blackKingSide) castling += 'k';
+  if (castlingAvailability.blackQueenSide) castling += 'q';
+  fen += ` ${castling || '-'}`;
+
+  // 4. En passant target square
+  fen += ` ${enPassantTarget || '-'}`;
+
+  // 5. Halfmove clock
+  fen += ` ${halfmoveClock}`;
+
+  // 6. Fullmove number
+  fen += ` ${fullmoveNumber}`;
+
+  return fen;
+};
+
 export const getPieceSymbol = (piece: Piece | null): string => {
   if (!piece) return '';
   const whiteSymbols: Record<Piece['type'], string> = {
@@ -92,7 +184,7 @@ export const getPieceStyle = (color: 'white' | 'black'): { color: string; textSh
     : '0 0 2px #fff, 0 0 2px #fff'
 });
 
-export const isPathClear = (fromRow: number, fromCol: number, toRow: number, toCol: number, testBoard: (Piece | null)[][]): boolean => {
+export const isPathClear = (fromRow: number, fromCol: number, toRow: number, toCol: number, testBoard: Board): boolean => {
   const rowStep = toRow > fromRow ? 1 : toRow < fromRow ? -1 : 0;
   const colStep = toCol > fromCol ? 1 : toCol < fromCol ? -1 : 0;
 
@@ -108,7 +200,7 @@ export const isPathClear = (fromRow: number, fromCol: number, toRow: number, toC
   return true;
 };
 
-export const findKing = (color: 'white' | 'black', testBoard: (Piece | null)[][]): { row: number; col: number } | null => {
+export const findKing = (color: 'white' | 'black', testBoard: Board): { row: number; col: number } | null => {
   for (let row = 0; row < BOARD_SIZE; row++) {
     for (let col = 0; col < BOARD_SIZE; col++) {
       const piece = testBoard[row][col];
@@ -124,7 +216,7 @@ export const isSquareUnderAttack = (
   row: number,
   col: number,
   byColor: 'white' | 'black',
-  testBoard: (Piece | null)[][],
+  testBoard: Board,
   lastMove: LastMove | null = null
 ): boolean => {
   for (let r = 0; r < BOARD_SIZE; r++) {
@@ -140,7 +232,7 @@ export const isSquareUnderAttack = (
   return false;
 };
 
-export const isInCheck = (color: 'white' | 'black', testBoard: (Piece | null)[][], lastMove: LastMove | null = null): boolean => {
+export const isInCheck = (color: 'white' | 'black', testBoard: Board, lastMove: LastMove | null = null): boolean => {
   const king = findKing(color, testBoard);
   if (!king) return false;
 
@@ -154,7 +246,7 @@ export const isValidMove = (
   toRow: number,
   toCol: number,
   piece: Piece,
-  testBoard: (Piece | null)[][],
+  testBoard: Board,
   lastMove: LastMove | null = null
 ): boolean => {
   if (toRow < 0 || toRow > BOARD_MAX_INDEX || toCol < 0 || toCol > BOARD_MAX_INDEX) return false;
@@ -262,7 +354,7 @@ export const wouldBeInCheck = (
   fromCol: number,
   toRow: number,
   toCol: number,
-  testBoard: (Piece | null)[][],
+  testBoard: Board,
   lastMove: LastMove | null = null
 ): boolean => {
   const newBoard = testBoard.map(row => [...row]);
@@ -295,7 +387,7 @@ export const wouldBeInCheck = (
   return isInCheck(piece.color, newBoard, lastMove);
 };
 
-export const isCheckmate = (color: 'white' | 'black', testBoard: (Piece | null)[][], lastMove: LastMove | null = null): boolean => {
+export const isCheckmate = (color: 'white' | 'black', testBoard: Board, lastMove: LastMove | null = null): boolean => {
   if (!isInCheck(color, testBoard, lastMove)) return false;
 
   for (let fromRow = 0; fromRow < BOARD_SIZE; fromRow++) {
@@ -316,7 +408,7 @@ export const isCheckmate = (color: 'white' | 'black', testBoard: (Piece | null)[
   return true;
 };
 
-export const isStalemate = (color: 'white' | 'black', testBoard: (Piece | null)[][], lastMove: LastMove | null = null): boolean => {
+export const isStalemate = (color: 'white' | 'black', testBoard: Board, lastMove: LastMove | null = null): boolean => {
   if (isInCheck(color, testBoard, lastMove)) return false;
 
   for (let fromRow = 0; fromRow < BOARD_SIZE; fromRow++) {
@@ -337,7 +429,7 @@ export const isStalemate = (color: 'white' | 'black', testBoard: (Piece | null)[
   return true;
 };
 
-export const isInsufficientMaterial = (testBoard: (Piece | null)[][]): boolean => {
+export const isInsufficientMaterial = (testBoard: Board): boolean => {
   const pieces: { type: Piece['type']; color: 'white' | 'black'; row: number; col: number }[] = [];
 
   // Collect all pieces on the board
