@@ -35,6 +35,7 @@ const ChaosChess = () => {
     isMyTurn,
     resetGame,
     clearDisconnectState,
+    startGame,
     gameActions,
   } = useGameManager();
 
@@ -79,14 +80,14 @@ const ChaosChess = () => {
           setTargetScore={gameActions.setTargetScore}
           playMode={playMode}
           setPlayMode={setPlayMode}
-          isLoading={network.isLoading}
+          isLoading={network.isLoading || isAILoading}
           countdown={network.countdown}
           networkRole={network.networkRole}
           setNetworkRole={network.setNetworkRole}
           createHostConnection={network.createHostConnection}
           createGuestConnection={network.createGuestConnection}
           hostOfferInput={network.hostOfferInput}
-          setHostOfferInput={network.hostOfferInput}
+          setHostOfferInput={network.setHostOfferInput}
           guestAnswerInput={network.guestAnswerInput}
           setGuestAnswerInput={network.setGuestAnswerInput}
           connectionOffer={network.connectionOffer}
@@ -95,7 +96,7 @@ const ChaosChess = () => {
           connectionMessage={network.connectionMessage}
           connectionAnswer={network.connectionAnswer}
           acceptGuestAnswer={network.acceptGuestAnswer}
-          startGame={gameActions.startGame}
+          startGame={startGame}
           addPlayer={gameActions.addPlayer}
           removePlayer={gameActions.removePlayer}
           updatePlayerName={handleUpdatePlayerName}

@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import type { Board, Move, LastMove } from '../chess-logic';
-import { boardToFen, fromAlgebraic, toAlgebraic } from '../chess-logic';
+import { boardToFen, toAlgebraic } from '../chess-logic';
 
 // Define the interface for the Stockfish worker
 interface StockfishWorker extends Worker {
@@ -11,19 +11,26 @@ interface StockfishWorker extends Worker {
 interface UseAIPlayer {
   isAILoading: boolean;
   aiError: string | null;
+  loadAI: () => Promise<void>;
   calculateBestMove: (board: Board, playerColor: 'white' | 'black', skillLevel: number, lastMove: LastMove | null, castlingAvailability: any, halfmoveClock: number, fullmoveNumber: number) => Promise<Move | null>;
   cancelCalculation: () => void;
 }
 
 export const useAIPlayer = (): UseAIPlayer => {
-  const [isAILoading, setIsAILoading] = useState<boolean>(true);
+  const [isAILoading, setIsAILoading] = useState<boolean>(false);
   const [aiError, setAIError] = useState<string | null>(null);
   const workerRef = useRef<StockfishWorker | null>(null);
   const resolveMoveRef = useRef<((move: Move | null) => void) | null>(null);
 
-  useEffect(() => {
+  const loadAI = useCallback(async () => {
+    if (workerRef.current) return;
+
+    setIsAILoading(true);
+    setAIError(null);
+
     try {
-      const worker = new Worker('./stockfish/stockfish-17.1-8e4d048.js');
+      const StockfishWorker = (await import('stockfish/src/stockfish-17.1-single-a496a04.js?worker')).default;
+      const worker = new StockfishWorker();
       workerRef.current = worker;
 
       worker.onmessage = (event: MessageEvent) => {
@@ -31,10 +38,9 @@ export const useAIPlayer = (): UseAIPlayer => {
         console.log('Stockfish message:', message);
 
         if (message === 'uciok') {
-          setIsAILoading(false);
           worker.postMessage('isready');
         } else if (message === 'readyok') {
-          // Engine is ready to receive commands
+          setIsAILoading(false);
         } else if (message.startsWith('bestmove')) {
           const moveString = message.split(' ')[1];
           if (resolveMoveRef.current) {
@@ -50,7 +56,7 @@ export const useAIPlayer = (): UseAIPlayer => {
 
       worker.onerror = (error) => {
         console.error('Stockfish Worker Error:', error);
-        setAIError('Failed to load AI engine.');
+        setAIError(`Failed to load AI engine: ${JSON.stringify(error)}`);
         setIsAILoading(false);
       };
 
@@ -61,17 +67,14 @@ export const useAIPlayer = (): UseAIPlayer => {
       setAIError(`Failed to initialize AI engine: ${e.message}`);
       setIsAILoading(false);
     }
-
-    return () => {
-      if (workerRef.current) {
-        workerRef.current.terminate();
-        workerRef.current = null;
-      }
-    };
   }, []);
 
   const calculateBestMove = useCallback(
-    (board: Board, playerColor: 'white' | 'black', skillLevel: number, lastMove: LastMove | null, castlingAvailability: any, halfmoveClock: number, fullmoveNumber: number): Promise<Move | null> => {
+    async (board: Board, playerColor: 'white' | 'black', skillLevel: number, lastMove: LastMove | null, castlingAvailability: any, halfmoveClock: number, fullmoveNumber: number): Promise<Move | null> => {
+      if (!workerRef.current) {
+        await loadAI();
+      }
+      
       return new Promise((resolve) => {
         if (!workerRef.current || isAILoading || aiError) {
           resolve(null);
@@ -91,7 +94,7 @@ export const useAIPlayer = (): UseAIPlayer => {
         workerRef.current.postMessage('go movetime 1000'); // Think for 1 second
       });
     },
-    [isAILoading, aiError]
+    [isAILoading, aiError, loadAI]
   );
 
   const cancelCalculation = useCallback(() => {
@@ -107,6 +110,7 @@ export const useAIPlayer = (): UseAIPlayer => {
   return {
     isAILoading,
     aiError,
+    loadAI,
     calculateBestMove,
     cancelCalculation,
   };

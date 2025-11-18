@@ -76,7 +76,7 @@ export const useGameManager = () => {
   const [isMidGameDisconnect, setIsMidGameDisconnect] = useState<boolean>(false);
   const gameActionsRef = useRef<GameActions | null>(null);
 
-  const { isAILoading, aiError, calculateBestMove, cancelCalculation } = useAIPlayer();
+  const { isAILoading, aiError, calculateBestMove, cancelCalculation, loadAI } = useAIPlayer();
 
   const handlePeerMessage = useCallback((message: NetworkMessage) => {
     const actions = gameActionsRef.current;
@@ -168,34 +168,43 @@ export const useGameManager = () => {
 
   // AI Logic
   useEffect(() => {
-    if (playMode === 'ai' && game.gameState === 'playing' && game.currentPlayerIndex === 1 && !isAILoading) {
-      const aiPlayerColor = gameActions.getPlayerColor(1, game.moveCount);
-      // Assuming a fixed skill level for now, can be made configurable
-      const skillLevel = 10; 
+    const playAITurn = async () => {
+      if (playMode === 'ai' && game.gameState === 'playing' && game.currentPlayerIndex === 1) {
+        const aiPlayerColor = gameActions.getPlayerColor(1, game.moveCount);
+        const skillLevel = 10;
 
-      calculateBestMove(
-        game.board,
-        aiPlayerColor,
-        skillLevel,
-        game.lastMove,
-        game.castlingAvailability,
-        game.halfmoveClock,
-        game.fullmoveNumber
-      ).then(move => {
+        const move = await calculateBestMove(
+          game.board,
+          aiPlayerColor,
+          skillLevel,
+          game.lastMove,
+          game.castlingAvailability,
+          game.halfmoveClock,
+          game.fullmoveNumber
+        );
+
         if (move) {
           const fromCoords = fromAlgebraic(move.from);
           const toCoords = fromAlgebraic(move.to);
 
           const from = game.board[fromCoords.row][fromCoords.col];
           if (from && from.type === 'pawn' && (toCoords.row === 0 || toCoords.row === 7)) {
-            // AI pawn promotion, always promote to queen for simplicity
             gameActions.promotePawn('queen');
           }
           gameActions.makeMove(fromCoords.row, fromCoords.col, toCoords.row, toCoords.col);
         }
-      });
+      }
+    };
+
+    playAITurn();
+  }, [playMode, game.gameState, game.currentPlayerIndex, calculateBestMove, game.board, game.lastMove, game.castlingAvailability, game.halfmoveClock, game.fullmoveNumber, game.moveCount, gameActions]);
+
+  const startGame = async () => {
+    if (playMode === 'ai') {
+      await loadAI();
     }
-  }, [playMode, game.gameState, game.currentPlayerIndex, isAILoading, calculateBestMove, game.board, game.lastMove, game.castlingAvailability, game.halfmoveClock, game.fullmoveNumber, game.moveCount, gameActions]);
+    gameActions.startGame();
+  };
 
   const sendChatMessage = (message: string) => {
     if (playMode === 'network') {
@@ -277,9 +286,9 @@ export const useGameManager = () => {
     isMyTurn,
     resetGame,
     clearDisconnectState,
+    startGame,
 
     // Pass-through game actions
     gameActions,
   };
 };
-
