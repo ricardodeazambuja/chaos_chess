@@ -29,8 +29,7 @@ export const useAIPlayer = (): UseAIPlayer => {
     setAIError(null);
 
     try {
-      const StockfishWorker = (await import('stockfish/src/stockfish-17.1-single-a496a04.js?worker')).default;
-      const worker = new StockfishWorker();
+      const worker = new Worker('./stockfish/stockfish-17.1-single-a496a04.js') as StockfishWorker;
       workerRef.current = worker;
 
       worker.onmessage = (event: MessageEvent) => {
