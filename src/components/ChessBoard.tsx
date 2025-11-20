@@ -30,7 +30,7 @@ const ChessBoard = ({
         {/* Board and file labels container */}
         <div className="flex flex-col gap-1 sm:gap-2 flex-1">
           {/* Chess board */}
-          <div className="grid grid-cols-8 gap-0 border-2 sm:border-4 border-amber-600 aspect-square w-full">
+          <div className="grid grid-cols-8 gap-0 border-2 sm:border-4 border-amber-600 aspect-square w-full overflow-visible">
             {board.map((row, rowIndex) => (
               row.map((piece, colIndex) => {
                 const isLight = (rowIndex + colIndex) % 2 === 0;
@@ -41,12 +41,14 @@ const ChessBoard = ({
                 const isSingleMove = isSingleMoveFrom || isSingleMoveTo;
 
                 const ringClass = isSelected
-                  ? 'ring-2 sm:ring-4 ring-blue-500 ring-offset-1 sm:ring-offset-2'
+                  ? 'ring-4 sm:ring-[6px] ring-blue-500 ring-inset'
                   : isValidMoveSquare
-                    ? 'ring-2 sm:ring-4 ring-green-500 ring-offset-1 animate-pulse'
+                    ? 'ring-4 sm:ring-[6px] ring-green-500 ring-inset animate-pulse'
                     : isSingleMove
-                      ? 'ring-2 sm:ring-4 ring-purple-400 ring-offset-1'
+                      ? 'ring-4 sm:ring-[6px] ring-purple-400 ring-inset'
                       : '';
+
+                const zIndexClass = isSelected || isValidMoveSquare || isSingleMove ? 'relative z-10' : '';
 
                 return (
                   <div
@@ -55,6 +57,7 @@ const ChessBoard = ({
                     className={`aspect-square flex items-center justify-center text-2xl sm:text-4xl md:text-5xl cursor-pointer
                       ${isLight ? 'bg-amber-100' : 'bg-amber-800'}
                       ${ringClass}
+                      ${zIndexClass}
                       hover:opacity-80 active:scale-95
                       transition-all duration-200 ease-in-out`}
                   >
