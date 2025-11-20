@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Crown, Users, Clock, DollarSign, Copy, ClipboardPaste, Loader, Cpu } from 'lucide-react';
+import { Crown, Users, Clock, DollarSign, Copy, ClipboardPaste, Loader, Bot } from 'lucide-react';
 
 const SetupScreen = ({
   players,
@@ -44,15 +44,15 @@ const SetupScreen = ({
     setTimeout(() => setCopiedMessage(''), 2000);
   };
 
-  React.useEffect(() => {
-    if (playMode === 'ai') {
-      // Fix players for AI mode
-      setPlayers([
-        { name: players[0]?.name || 'Player 1' },
-        { name: 'AI' },
-      ]);
-    }
-  }, [playMode, setPlayers]);
+  // Helper function to toggle AI for a player
+  const togglePlayerAI = (index: number) => {
+    const newPlayers = [...players];
+    newPlayers[index] = {
+      ...newPlayers[index],
+      isAI: !newPlayers[index].isAI
+    };
+    setPlayers(newPlayers);
+  };
 
   const renderNetworkSetup = () => {
     // 1. Initial role selection
@@ -243,35 +243,21 @@ const SetupScreen = ({
             <button
               onClick={() => setPlayMode('network')}
               className={`w-full p-4 rounded-lg border-2 text-left transition-all ${
-                playMode === 'network' 
-                  ? 'border-blue-500 bg-blue-50' 
+                playMode === 'network'
+                  ? 'border-blue-500 bg-blue-50'
                   : 'border-slate-300 bg-white hover:border-blue-300'
               }`}
             >
               <div className="font-bold text-slate-800">🌐 Network Game</div>
               <div className="text-sm text-slate-600">Play with friends online</div>
             </button>
-            <button
-              onClick={() => setPlayMode('ai')}
-              className={`w-full p-4 rounded-lg border-2 text-left transition-all ${
-                playMode === 'ai' 
-                  ? 'border-blue-500 bg-blue-50' 
-                  : 'border-slate-300 bg-white hover:border-blue-300'
-              }`}
-            >
-              <div className="font-bold text-slate-800 flex items-center">
-                <Cpu size={20} className="mr-2" />
-                Play vs. AI
-              </div>
-              <div className="text-sm text-slate-600">Challenge a computer opponent</div>
-            </button>
           </div>
         </div>
         
         {renderNetworkSetup()}
         
-        {/* Show game setup only if local, AI, OR (network host is connected) */}
-        {(playMode === 'local' || playMode === 'ai' || (playMode === 'network' && networkRole === 'host' && isConnected)) && (
+        {/* Show game setup only if local OR (network host is connected) */}
+        {(playMode === 'local' || (playMode === 'network' && networkRole === 'host' && isConnected)) && (
           <>
             <div className="mb-6">
               <label className="block text-sm font-bold text-slate-700 mb-2">Game Mode</label>
@@ -354,18 +340,31 @@ const SetupScreen = ({
               </div>
             </div>
             
-            {(playMode === 'local' || playMode === 'ai') && gameMode !== 'normie' && (
+            {playMode === 'local' && gameMode !== 'normie' && (
               <div className="space-y-3 mb-6">
+                <label className="block text-sm font-bold text-slate-700 mb-2">Players</label>
                 {players.map((player, index) => (
-                  <div key={index} className="flex gap-2">
+                  <div key={index} className="flex gap-2 items-center">
                     <input
                       type="text"
                       value={player.name}
                       onChange={(e) => updatePlayerName(index, e.target.value)}
                       className="flex-1 px-4 py-2 border-2 border-slate-300 rounded-lg focus:outline-none focus:border-amber-500"
-                      placeholder={`Player ${index + 1}`}
-                      disabled={playMode === 'ai' && index === 1}
+                      placeholder={player.isAI ? `AI Player ${index + 1}` : `Player ${index + 1}`}
                     />
+                    {/* AI Toggle Button */}
+                    <button
+                      onClick={() => togglePlayerAI(index)}
+                      className={`px-3 py-2 rounded-lg border-2 transition-all flex items-center gap-1 ${
+                        player.isAI
+                          ? 'bg-blue-500 text-white border-blue-500'
+                          : 'bg-white text-slate-700 border-slate-300 hover:border-blue-300'
+                      }`}
+                      title={player.isAI ? 'AI Player' : 'Human Player'}
+                    >
+                      <Bot size={18} />
+                      {player.isAI && <span className="text-xs font-bold">AI</span>}
+                    </button>
                     {players.length > 2 && (
                       <button
                         onClick={() => removePlayer(index)}

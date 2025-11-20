@@ -17,6 +17,7 @@ import {
 
 interface Player {
   name: string;
+  isAI?: boolean; // Optional flag to mark AI players
 }
 
 interface Move {
@@ -285,7 +286,8 @@ export const useGameEngine = ({ onGameStart, onMoveMade, onGameOver }: GameEngin
         const actualCaptured = capturedPiece || enPassantCapture;
         let updatedPlayerScores = playerScores;
         if (actualCaptured) {
-          setCapturedPieces(prev => ({ ...prev, [movingPiece.color]: [...prev[movingPiece.color], actualCaptured.type] }));
+          // Add captured piece to the array of its own color (not the capturing player's color)
+          setCapturedPieces(prev => ({ ...prev, [actualCaptured.color]: [...prev[actualCaptured.color], actualCaptured.type] }));
           if (isPointsGame) {
             updatedPlayerScores = [...playerScores];
             updatedPlayerScores[currentPlayerIndex] = (updatedPlayerScores[currentPlayerIndex] || 0) + PIECE_VALUES[actualCaptured.type];
@@ -397,7 +399,8 @@ export const useGameEngine = ({ onGameStart, onMoveMade, onGameOver }: GameEngin
         const actualCaptured = capturedPiece || enPassantCapture;
         let updatedPlayerScores = playerScores;
         if (actualCaptured) {
-          setCapturedPieces(prev => ({ ...prev, [movingPiece.color]: [...prev[movingPiece.color], actualCaptured.type] }));
+          // Add captured piece to the array of its own color (not the capturing player's color)
+          setCapturedPieces(prev => ({ ...prev, [actualCaptured.color]: [...prev[actualCaptured.color], actualCaptured.type] }));
           if (isPointsGame) {
             updatedPlayerScores = [...playerScores];
             updatedPlayerScores[currentPlayerIndex] = (updatedPlayerScores[currentPlayerIndex] || 0) + PIECE_VALUES[actualCaptured.type];

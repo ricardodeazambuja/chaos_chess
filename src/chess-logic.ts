@@ -475,3 +475,56 @@ export const isInsufficientMaterial = (testBoard: Board): boolean => {
 
   return false;
 };
+
+/**
+ * Generates all valid moves for a given player color.
+ * This function is used by the AI to evaluate possible moves.
+ * @param board The current board state.
+ * @param color The color of the player to generate moves for.
+ * @param lastMove The last move made in the game (for en passant).
+ * @returns An array of all valid moves for the given player.
+ */
+export const generateAllValidMoves = (
+  board: Board,
+  color: 'white' | 'black',
+  lastMove: LastMove | null = null
+): Move[] => {
+  const validMoves: Move[] = [];
+
+  // Iterate through all squares
+  for (let fromRow = 0; fromRow < BOARD_SIZE; fromRow++) {
+    for (let fromCol = 0; fromCol < BOARD_SIZE; fromCol++) {
+      const piece = board[fromRow][fromCol];
+
+      // Skip if no piece or wrong color
+      if (!piece || piece.color !== color) continue;
+
+      // Check all possible destination squares
+      for (let toRow = 0; toRow < BOARD_SIZE; toRow++) {
+        for (let toCol = 0; toCol < BOARD_SIZE; toCol++) {
+          // Check if the move is valid AND doesn't leave the king in check
+          if (
+            isValidMove(fromRow, fromCol, toRow, toCol, piece, board, lastMove) &&
+            !wouldBeInCheck(fromRow, fromCol, toRow, toCol, board, lastMove)
+          ) {
+            const from = toAlgebraic(fromRow, fromCol);
+            const to = toAlgebraic(toRow, toCol);
+
+            // Handle pawn promotion
+            if (piece.type === 'pawn' && (toRow === 0 || toRow === BOARD_MAX_INDEX)) {
+              // Generate all possible promotion moves
+              validMoves.push({ from, to, promotion: 'q' });
+              validMoves.push({ from, to, promotion: 'r' });
+              validMoves.push({ from, to, promotion: 'b' });
+              validMoves.push({ from, to, promotion: 'n' });
+            } else {
+              validMoves.push({ from, to });
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return validMoves;
+};

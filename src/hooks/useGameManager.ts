@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useGameEngine } from './useGameEngine';
 import type { GameStartData, MoveMadeData } from './useGameEngine';
 import { useNetworkAdapter } from './useNetworkAdapter';
-import { useAIPlayer } from './useAIPlayer'; // Import the AI player hook
+import { useMinimaxPlayer } from './useMinimaxPlayer'; // Import the Minimax AI player hook
 import type { Piece } from '../chess-logic';
 import { fromAlgebraic } from '../chess-logic';
 
@@ -70,13 +70,16 @@ type NetworkMessage =
   | GameOverNetworkMessage;
 
 export const useGameManager = () => {
-  const [playMode, setPlayMode] = useState<'local' | 'network' | 'ai'>('local');
+  const [playMode, setPlayMode] = useState<'local' | 'network'>('local');
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [isMidGameDisconnect, setIsMidGameDisconnect] = useState<boolean>(false);
   const gameActionsRef = useRef<GameActions | null>(null);
 
-  const { isAILoading, aiError, calculateBestMove, cancelCalculation, loadAI } = useAIPlayer();
+  // Guard to prevent multiple concurrent AI turns (fixes AI vs AI glitch)
+  const isAIThinkingRef = useRef(false);
+
+  const { isAILoading, aiError, calculateBestMove, cancelCalculation, loadAI } = useMinimaxPlayer();
 
   const handlePeerMessage = useCallback((message: NetworkMessage) => {
     const actions = gameActionsRef.current;
@@ -166,43 +169,73 @@ export const useGameManager = () => {
     }
   }, [playMode, game.gameState, network.isConnected, isMidGameDisconnect]);
 
-  // AI Logic
+  // AI Logic - automatically play moves for AI players with visual feedback
   useEffect(() => {
     const playAITurn = async () => {
-      if (playMode === 'ai' && game.gameState === 'playing' && game.currentPlayerIndex === 1) {
-        const aiPlayerColor = gameActions.getPlayerColor(1, game.moveCount);
-        const skillLevel = 10;
+      const currentPlayer = game.players[game.currentPlayerIndex];
 
-        const move = await calculateBestMove(
-          game.board,
-          aiPlayerColor,
-          skillLevel,
-          game.lastMove,
-          game.castlingAvailability,
-          game.halfmoveClock,
-          game.fullmoveNumber
-        );
+      // Guard: Prevent multiple concurrent AI turns (fixes AI vs AI race condition)
+      if (currentPlayer?.isAI && game.gameState === 'playing' && !isAIThinkingRef.current) {
+        isAIThinkingRef.current = true; // Lock to prevent re-entry
 
-        if (move) {
-          const fromCoords = fromAlgebraic(move.from);
-          const toCoords = fromAlgebraic(move.to);
+        try {
+          // Get the correct color for the AI based on the game mode (normie, rotating, random)
+          const aiPlayerColor = gameActions.getPlayerColor(
+            game.currentPlayerIndex,
+            game.playerMoveCount[game.currentPlayerIndex] || 0
+          );
+          const skillLevel = 10; // Can be customized per player in the future
 
-          const from = game.board[fromCoords.row][fromCoords.col];
-          if (from && from.type === 'pawn' && (toCoords.row === 0 || toCoords.row === 7)) {
-            gameActions.promotePawn('queen');
+          const move = await calculateBestMove(
+            game.board,
+            aiPlayerColor,
+            skillLevel,
+            game.lastMove,
+            game.castlingAvailability,
+            game.halfmoveClock,
+            game.fullmoveNumber,
+            // Points game data
+            game.isPointsGame,
+            game.playerScores,
+            game.targetScore,
+            game.currentPlayerIndex,
+            // Time data (remaining time for current AI player)
+            game.isTimedGame ? game.playerTimes[game.currentPlayerIndex] : undefined,
+            // Game mode
+            game.gameMode
+          );
+
+          if (move) {
+            const fromCoords = fromAlgebraic(move.from);
+            const toCoords = fromAlgebraic(move.to);
+
+            // Phase 1: Show which piece the AI is selecting (1.5s)
+            gameActions.makeMove(fromCoords.row, fromCoords.col);
+            await new Promise(resolve => setTimeout(resolve, 1500));
+
+            // Phase 2: Show where the AI is moving to (1.5s)
+            // The piece is already selected, so valid moves are shown
+            await new Promise(resolve => setTimeout(resolve, 1500));
+
+            // Phase 3: Execute the move
+            const from = game.board[fromCoords.row][fromCoords.col];
+            if (from && from.type === 'pawn' && (toCoords.row === 0 || toCoords.row === 7)) {
+              gameActions.promotePawn('queen');
+            }
+            gameActions.makeMove(fromCoords.row, fromCoords.col, toCoords.row, toCoords.col);
           }
-          gameActions.makeMove(fromCoords.row, fromCoords.col, toCoords.row, toCoords.col);
+        } finally {
+          // Always unlock, even if an error occurs
+          isAIThinkingRef.current = false;
         }
       }
     };
 
     playAITurn();
-  }, [playMode, game.gameState, game.currentPlayerIndex, calculateBestMove, game.board, game.lastMove, game.castlingAvailability, game.halfmoveClock, game.fullmoveNumber, game.moveCount, gameActions]);
+  }, [game.gameState, game.currentPlayerIndex, game.players, calculateBestMove, game.board, game.lastMove, game.castlingAvailability, game.halfmoveClock, game.fullmoveNumber, game.playerMoveCount, gameActions]);
 
   const startGame = async () => {
-    if (playMode === 'ai') {
-      await loadAI();
-    }
+    // AI is always ready (no loading needed for Minimax)
     gameActions.startGame();
   };
 
@@ -229,9 +262,7 @@ export const useGameManager = () => {
     if (playMode === 'local') {
       return true;
     }
-    if (playMode === 'ai') {
-      return game.currentPlayerIndex === 0;
-    }
+    // In network mode, check if it's my player index
     const myPlayerIndex = network.networkRole === 'host' ? 0 : 1;
     return game.currentPlayerIndex === myPlayerIndex;
   };
@@ -258,7 +289,8 @@ export const useGameManager = () => {
     setIsMidGameDisconnect(false);
     setConnectionError(null);
     network.resetConnection();
-    cancelCalculation(); // Cancel any ongoing AI calculation
+    // Note: cancelCalculation is a no-op for Minimax, but keeping for interface compatibility
+    cancelCalculation();
   }
 
   const clearDisconnectState = () => {
@@ -274,8 +306,6 @@ export const useGameManager = () => {
     chatMessages,
     connectionError,
     isMidGameDisconnect,
-    isAILoading, // Expose AI loading state
-    aiError,     // Expose AI error state
 
     // Actions
     setPlayMode,
