@@ -202,7 +202,11 @@ export const useGameManager = () => {
             // Time data (remaining time for current AI player)
             game.isTimedGame ? game.playerTimes[game.currentPlayerIndex] : undefined,
             // Game mode
-            game.gameMode
+            game.gameMode,
+            // AI behavior (randomness setting)
+            currentPlayer.aiRandomness ?? true,
+            // Move history (for opening book)
+            game.moveHistory
           );
 
           if (move) {

@@ -25,7 +25,11 @@ export interface AIPlayer {
     // Time data
     remainingTime?: number,
     // Game mode
-    gameMode?: 'rotating' | 'random' | 'normie'
+    gameMode?: 'rotating' | 'random' | 'normie',
+    // AI behavior
+    enableRandomness?: boolean,
+    // Move history
+    moveHistory?: { from: string; to: string }[]
   ) => Promise<Move | null>;
   cancelCalculation: () => void;
 }

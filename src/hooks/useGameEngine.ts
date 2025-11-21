@@ -18,6 +18,7 @@ import {
 interface Player {
   name: string;
   isAI?: boolean; // Optional flag to mark AI players
+  aiRandomness?: boolean; // AI randomness setting (default: true)
 }
 
 interface Move {

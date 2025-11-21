@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Crown, Users, Clock, DollarSign, Copy, ClipboardPaste, Loader, Bot } from 'lucide-react';
+import { Crown, Users, Clock, DollarSign, Copy, ClipboardPaste, Loader, Bot, Shuffle } from 'lucide-react';
 
 const SetupScreen = ({
   players,
@@ -50,6 +50,16 @@ const SetupScreen = ({
     newPlayers[index] = {
       ...newPlayers[index],
       isAI: !newPlayers[index].isAI
+    };
+    setPlayers(newPlayers);
+  };
+
+  // Helper function to toggle AI randomness for a player
+  const togglePlayerRandomness = (index: number) => {
+    const newPlayers = [...players];
+    newPlayers[index] = {
+      ...newPlayers[index],
+      aiRandomness: !(newPlayers[index].aiRandomness ?? true)
     };
     setPlayers(newPlayers);
   };
@@ -340,16 +350,16 @@ const SetupScreen = ({
               </div>
             </div>
             
-            {playMode === 'local' && gameMode !== 'normie' && (
+            {playMode === 'local' && (
               <div className="space-y-3 mb-6">
                 <label className="block text-sm font-bold text-slate-700 mb-2">Players</label>
                 {players.map((player, index) => (
-                  <div key={index} className="flex gap-2 items-center">
+                  <div key={index} className="flex gap-2 items-center flex-wrap">
                     <input
                       type="text"
                       value={player.name}
                       onChange={(e) => updatePlayerName(index, e.target.value)}
-                      className="flex-1 px-4 py-2 border-2 border-slate-300 rounded-lg focus:outline-none focus:border-amber-500"
+                      className="flex-1 min-w-[200px] px-4 py-2 border-2 border-slate-300 rounded-lg focus:outline-none focus:border-amber-500"
                       placeholder={player.isAI ? `AI Player ${index + 1}` : `Player ${index + 1}`}
                     />
                     {/* AI Toggle Button */}
@@ -365,6 +375,21 @@ const SetupScreen = ({
                       <Bot size={18} />
                       {player.isAI && <span className="text-xs font-bold">AI</span>}
                     </button>
+                    {/* AI Randomness Toggle (only shown for AI players) */}
+                    {player.isAI && (
+                      <button
+                        onClick={() => togglePlayerRandomness(index)}
+                        className={`px-4 py-2 rounded-lg border-2 transition-all flex items-center gap-1.5 min-w-[80px] ${
+                          player.aiRandomness ?? true
+                            ? 'bg-purple-500 text-white border-purple-500'
+                            : 'bg-white text-slate-700 border-slate-300 hover:border-purple-300'
+                        }`}
+                        title={player.aiRandomness ?? true ? 'Randomness Enabled' : 'Deterministic Mode'}
+                      >
+                        <Shuffle size={16} />
+                        {(player.aiRandomness ?? true) && <span className="text-xs font-bold whitespace-nowrap">RND</span>}
+                      </button>
+                    )}
                     {players.length > 2 && (
                       <button
                         onClick={() => removePlayer(index)}
@@ -378,7 +403,7 @@ const SetupScreen = ({
               </div>
             )}
             
-            {playMode === 'local' && gameMode !== 'normie' && players.length < 6 && (
+            {playMode === 'local' && players.length < 6 && (
               <button
                 onClick={addPlayer}
                 className="w-full mb-4 px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 flex items-center justify-center gap-2"

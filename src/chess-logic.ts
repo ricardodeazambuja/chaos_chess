@@ -528,3 +528,78 @@ export const generateAllValidMoves = (
 
   return validMoves;
 };
+
+/**
+ * Generates only capture moves for quiescence search.
+ *
+ * This is a specialized version of generateAllValidMoves that only returns
+ * moves that capture enemy pieces (including en passant captures).
+ * Used in quiescence search to resolve tactical sequences without
+ * evaluating quiet positions.
+ *
+ * @param board The current board state.
+ * @param color The color of the player to generate moves for.
+ * @param lastMove The last move made in the game (for en passant).
+ * @returns An array of all valid capture moves for the given player.
+ */
+export const generateCaptureMoves = (
+  board: Board,
+  color: 'white' | 'black',
+  lastMove: LastMove | null = null
+): Move[] => {
+  const captureMoves: Move[] = [];
+
+  // Iterate through all squares to find our pieces
+  for (let fromRow = 0; fromRow < BOARD_SIZE; fromRow++) {
+    for (let fromCol = 0; fromCol < BOARD_SIZE; fromCol++) {
+      const piece = board[fromRow][fromCol];
+
+      // Skip if no piece or wrong color
+      if (!piece || piece.color !== color) continue;
+
+      // Check all possible destination squares
+      for (let toRow = 0; toRow < BOARD_SIZE; toRow++) {
+        for (let toCol = 0; toCol < BOARD_SIZE; toCol++) {
+          const targetPiece = board[toRow][toCol];
+
+          // Only consider captures
+          const isNormalCapture = targetPiece && targetPiece.color !== color;
+
+          // Check for en passant (pawn capture with no piece on destination)
+          const isEnPassant =
+            piece.type === 'pawn' &&
+            !targetPiece &&
+            Math.abs(toCol - fromCol) === 1 &&
+            lastMove &&
+            lastMove.piece.type === 'pawn' &&
+            lastMove.piece.color !== color &&
+            Math.abs(lastMove.toRow - lastMove.fromRow) === 2 &&
+            lastMove.toRow === fromRow &&
+            lastMove.toCol === toCol;
+
+          // Only proceed if this is a capture move
+          if (isNormalCapture || isEnPassant) {
+            // Check if the move is valid AND doesn't leave the king in check
+            if (
+              isValidMove(fromRow, fromCol, toRow, toCol, piece, board, lastMove) &&
+              !wouldBeInCheck(fromRow, fromCol, toRow, toCol, board, lastMove)
+            ) {
+              const from = toAlgebraic(fromRow, fromCol);
+              const to = toAlgebraic(toRow, toCol);
+
+              // Handle pawn promotion captures
+              if (piece.type === 'pawn' && (toRow === 0 || toRow === BOARD_MAX_INDEX)) {
+                // Only generate queen promotions in quiescence search (most common)
+                captureMoves.push({ from, to, promotion: 'q' });
+              } else {
+                captureMoves.push({ from, to });
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return captureMoves;
+};
