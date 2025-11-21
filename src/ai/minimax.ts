@@ -59,7 +59,7 @@ import { getBookMove, movesToAlgebraic } from './opening-book';
  * @param currentPlayerIndex Index of the AI player.
  * @returns A score representing the board state. Positive is good for the AI, negative is bad.
  */
-const evaluateBoard = (
+export const evaluateBoard = (
   board: Board,
   aiColor: 'white' | 'black',
   isPointsGame?: boolean,
@@ -274,7 +274,7 @@ const MAX_KILLER_MOVES = 2;
  * Clear killer moves table (call before each new search).
  * Prevents memory leaks from accumulated killer moves.
  */
-const clearKillerMoves = (): void => {
+export const clearKillerMoves = (): void => {
   killerMoves.clear();
 };
 
@@ -297,7 +297,7 @@ const clearKillerMoves = (): void => {
  * @param depth Current search depth (for killer move lookup)
  * @returns Ordered array of moves (best first)
  */
-const orderMoves = (
+export const orderMoves = (
   moves: Move[],
   board: Board,
   depth: number
@@ -403,7 +403,7 @@ const storeKillerMove = (move: Move, depth: number): void => {
  * @param currentDepth Current depth (for rotating mode)
  * @returns Evaluation score of the position
  */
-const quiescence = (
+export const quiescence = (
   board: Board,
   alpha: number,
   beta: number,
@@ -595,7 +595,7 @@ const quiescence = (
  * @param initialDepth The initial search depth (to track color flips in rotating mode).
  * @returns The best score found for the current branch of the game tree.
  */
-const minimax = (
+export const minimax = (
   board: Board,
   depth: number,
   alpha: number,
@@ -809,7 +809,7 @@ const minimax = (
  * @param move The move to make (from/to/promotion).
  * @returns The new board and the new last move state.
  */
-const simulateMove = (board: Board, move: Move): { board: Board; lastMove: LastMove | null } => {
+export const simulateMove = (board: Board, move: Move): { board: Board; lastMove: LastMove | null } => {
   const newBoard = board.map(row => [...row]);
   const { row: fromRow, col: fromCol } = fromAlgebraic(move.from);
   const { row: toRow, col: toCol } = fromAlgebraic(move.to);

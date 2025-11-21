@@ -20,6 +20,7 @@ Web-based chess with unique game modes, AI opponents, and serverless P2P multipl
 ## AI Features
 
 - **Minimax algorithm** with alpha-beta pruning
+- **Parallel search** - multi-core CPU utilization (~3-4x faster)
 - **Strength:** 2000-2300 Elo (expert to master level)
 - **Chaos mode intelligence** - adapts strategy per game mode
 - **Randomness control** - toggle between varied/deterministic play
@@ -65,6 +66,8 @@ Output in `dist/`
 src/
 ├── ai/                    # Minimax AI implementation
 │   ├── minimax.ts        # Core algorithm
+│   ├── minimax.worker.ts # Parallel worker
+│   ├── worker-pool.ts    # Worker management
 │   ├── piece-square-tables.ts
 │   ├── transposition-table.ts
 │   └── opening-book.ts

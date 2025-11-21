@@ -4,7 +4,7 @@ import tailwindcss from '@tailwindcss/vite'
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  base: './', 
+  base: './',
   plugins: [
     react(),
     tailwindcss(),
@@ -14,5 +14,11 @@ export default defineConfig({
       'Cross-Origin-Opener-Policy': 'same-origin',
       'Cross-Origin-Embedder-Policy': 'require-corp',
     },
+  },
+  worker: {
+    format: 'es',
+  },
+  optimizeDeps: {
+    exclude: ['*.worker.ts'],
   },
 })

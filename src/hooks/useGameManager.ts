@@ -174,8 +174,11 @@ export const useGameManager = () => {
     const playAITurn = async () => {
       const currentPlayer = game.players[game.currentPlayerIndex];
 
+      console.log(`[AI Effect] Triggered - Player ${game.currentPlayerIndex} (${currentPlayer?.name}), isAI: ${currentPlayer?.isAI}, gameState: ${game.gameState}, thinking: ${isAIThinkingRef.current}`);
+
       // Guard: Prevent multiple concurrent AI turns (fixes AI vs AI race condition)
       if (currentPlayer?.isAI && game.gameState === 'playing' && !isAIThinkingRef.current) {
+        console.log(`[AI Effect] ✅ Starting AI turn for ${currentPlayer.name}`);
         isAIThinkingRef.current = true; // Lock to prevent re-entry
 
         try {
@@ -184,7 +187,7 @@ export const useGameManager = () => {
             game.currentPlayerIndex,
             game.playerMoveCount[game.currentPlayerIndex] || 0
           );
-          const skillLevel = 10; // Can be customized per player in the future
+          const skillLevel = 15; // Depth 3 search (15/5=3) - improved tactical awareness with parallel workers
 
           const move = await calculateBestMove(
             game.board,
@@ -213,30 +216,44 @@ export const useGameManager = () => {
             const fromCoords = fromAlgebraic(move.from);
             const toCoords = fromAlgebraic(move.to);
 
-            // Phase 1: Show which piece the AI is selecting (1.5s)
+            // Show which piece the AI is selecting (1.5s delay)
             gameActions.makeMove(fromCoords.row, fromCoords.col);
             await new Promise(resolve => setTimeout(resolve, 1500));
 
-            // Phase 2: Show where the AI is moving to (1.5s)
-            // The piece is already selected, so valid moves are shown
-            await new Promise(resolve => setTimeout(resolve, 1500));
-
-            // Phase 3: Execute the move
+            // Execute the move
             const from = game.board[fromCoords.row][fromCoords.col];
             if (from && from.type === 'pawn' && (toCoords.row === 0 || toCoords.row === 7)) {
               gameActions.promotePawn('queen');
             }
             gameActions.makeMove(fromCoords.row, fromCoords.col, toCoords.row, toCoords.col);
+
+            // Unlock immediately to allow next AI to start
+            isAIThinkingRef.current = false;
+
+            // If next player is also AI, add a small delay to allow UI to update
+            // This prevents visual indicators from previous move lingering on screen
+            const nextPlayerIndex = (game.currentPlayerIndex + 1) % game.players.length;
+            const nextPlayer = game.players[nextPlayerIndex];
+            if (nextPlayer?.isAI) {
+              await new Promise(resolve => setTimeout(resolve, 300));
+            }
           }
-        } finally {
-          // Always unlock, even if an error occurs
+        } catch (error) {
+          console.error('[AI] Error during AI turn:', error);
           isAIThinkingRef.current = false;
         }
       }
     };
 
     playAITurn();
-  }, [game.gameState, game.currentPlayerIndex, game.players, calculateBestMove, game.board, game.lastMove, game.castlingAvailability, game.halfmoveClock, game.fullmoveNumber, game.playerMoveCount, gameActions]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    game.gameState,
+    game.currentPlayerIndex,
+    game.players,
+    // Only trigger on player turn changes, not every board/move update
+    // Other game state accessed via closure is always fresh from 'game' object
+  ]);
 
   const startGame = async () => {
     // AI is always ready (no loading needed for Minimax)
